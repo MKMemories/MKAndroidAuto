@@ -1,0 +1,46 @@
+package com.mkmemories.copilot.feature.guardian
+
+import android.content.Context
+import androidx.core.content.edit
+
+/**
+ * Pack Ange gardien — mémoire de stationnement intelligente.
+ *
+ * À la déconnexion d'Android Auto / du Bluetooth voiture, la position est
+ * enregistrée automatiquement : "où est ma voiture ?" ne se pose plus.
+ * TODO v1.1 : photo + étage, minuteur de stationnement payant / zone bleue
+ * avec rappel avant expiration.
+ */
+class ParkingMemory(context: Context) {
+
+    private val prefs = context.getSharedPreferences("parking_memory", Context.MODE_PRIVATE)
+
+    fun saveParkingSpot(latitude: Double, longitude: Double, timestampMillis: Long) {
+        prefs.edit {
+            putLong(KEY_LAT, latitude.toRawBits())
+            putLong(KEY_LNG, longitude.toRawBits())
+            putLong(KEY_TIME, timestampMillis)
+        }
+    }
+
+    fun lastParkingSpot(): ParkingSpot? {
+        if (!prefs.contains(KEY_LAT)) return null
+        return ParkingSpot(
+            latitude = Double.fromBits(prefs.getLong(KEY_LAT, 0L)),
+            longitude = Double.fromBits(prefs.getLong(KEY_LNG, 0L)),
+            timestampMillis = prefs.getLong(KEY_TIME, 0L),
+        )
+    }
+
+    private companion object {
+        const val KEY_LAT = "lat"
+        const val KEY_LNG = "lng"
+        const val KEY_TIME = "time"
+    }
+}
+
+data class ParkingSpot(
+    val latitude: Double,
+    val longitude: Double,
+    val timestampMillis: Long,
+)
