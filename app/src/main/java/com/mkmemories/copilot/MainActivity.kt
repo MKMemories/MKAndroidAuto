@@ -2,6 +2,7 @@ package com.mkmemories.copilot
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -81,6 +82,8 @@ import com.mkmemories.copilot.feature.roadtrip.Trip
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
 import com.mkmemories.copilot.feature.roadtrip.TripStop
 import com.mkmemories.copilot.feature.roadtrip.timeLabel
+import com.mkmemories.copilot.feature.update.UpdateChecker
+import com.mkmemories.copilot.feature.update.UpdateInfo
 import com.mkmemories.copilot.ui.planner.PlannerScreen
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
 import com.mkmemories.copilot.ui.theme.BrandAuroraViolet
@@ -151,7 +154,11 @@ private val Features = listOf(
 private fun HomeScreen(trip: Trip, onPlayBriefing: (String) -> Unit, onOpenPlanner: () -> Unit) {
     val scroll = rememberScrollState()
     var appeared by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) { appeared = true }
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    LaunchedEffect(Unit) {
+        appeared = true
+        update = UpdateChecker.check(currentBuild = BuildConfig.BUILD_NUMBER)
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandNight)) {
         // Hero fjord/aurore en parallaxe : il défile deux fois moins vite que le contenu
@@ -192,6 +199,11 @@ private fun HomeScreen(trip: Trip, onPlayBriefing: (String) -> Unit, onOpenPlann
             Spacer(Modifier.height(200.dp))
 
             Reveal(appeared, index = 0) { HeroTitle() }
+
+            update?.let { info ->
+                Spacer(Modifier.height(20.dp))
+                UpdateCard(info)
+            }
 
             Spacer(Modifier.height(28.dp))
             Reveal(appeared, index = 1) { BriefingCard(trip, onPlayBriefing) }
@@ -270,6 +282,42 @@ private fun HeroTitle() {
             style = MaterialTheme.typography.bodyMedium,
             color = BrandMist,
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mise à jour intégrée
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun UpdateCard(info: UpdateInfo) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(BrandEmber.copy(alpha = 0.16f))
+            .border(1.dp, BrandEmber.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+            .clickable {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context, "Aucun navigateur disponible", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Refresh, contentDescription = null, tint = BrandEmber, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.size(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Mise à jour disponible", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text(
+                "${info.title} — touchez pour télécharger et installer",
+                style = MaterialTheme.typography.bodyMedium,
+                color = BrandMist,
+            )
+        }
     }
 }
 
