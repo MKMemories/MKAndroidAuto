@@ -36,8 +36,8 @@ class CrashDetector(
 
     override fun onSensorChanged(event: SensorEvent) {
         val (x, y, z) = event.values
-        val magnitude = sqrt(x * x + y * y + z * z)
-        if (magnitude >= CRASH_THRESHOLD_MS2) {
+        val magnitude = magnitudeMs2(x, y, z)
+        if (isCrash(magnitude)) {
             onPossibleCrash(magnitude)
         }
     }
@@ -48,5 +48,12 @@ class CrashDetector(
         // TODO v1.1 : affiner avec la vitesse GPS (un choc à l'arrêt = téléphone tombé,
         // pas un accident) et une fenêtre glissante pour éviter les faux positifs.
         const val CRASH_THRESHOLD_MS2 = 60f
+
+        /** Norme du vecteur accélération linéaire. */
+        internal fun magnitudeMs2(x: Float, y: Float, z: Float): Float =
+            sqrt(x * x + y * y + z * z)
+
+        /** Un choc au-delà de ~6 g est inatteignable en conduite normale. */
+        internal fun isCrash(magnitudeMs2: Float): Boolean = magnitudeMs2 >= CRASH_THRESHOLD_MS2
     }
 }

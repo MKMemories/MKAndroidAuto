@@ -30,17 +30,19 @@ object NavigationLauncher {
      * Depuis le téléphone : itinéraire complet d'une journée dans Maps
      * (l'URL officielle accepte jusqu'à 9 étapes intermédiaires).
      */
-    fun dayItineraryUrl(stops: List<TripStop>): Uri {
+    fun dayItineraryUrl(stops: List<TripStop>): Uri = Uri.parse(dayItineraryUrlString(stops))
+
+    /** Construction pure de l'URL Maps, le séparateur d'étapes `|` encodé en %7C. */
+    internal fun dayItineraryUrlString(stops: List<TripStop>): String {
         require(stops.isNotEmpty()) { "Aucune étape pour ce jour" }
         val destination = stops.last()
         val waypoints = stops.dropLast(1).take(9)
-            .joinToString("|") { "${it.latitude},${it.longitude}" }
-        val url = buildString {
+            .joinToString("%7C") { "${it.latitude},${it.longitude}" }
+        return buildString {
             append("https://www.google.com/maps/dir/?api=1")
             append("&destination=${destination.latitude},${destination.longitude}")
-            if (waypoints.isNotEmpty()) append("&waypoints=${Uri.encode(waypoints)}")
+            if (waypoints.isNotEmpty()) append("&waypoints=$waypoints")
             append("&travelmode=driving")
         }
-        return Uri.parse(url)
     }
 }

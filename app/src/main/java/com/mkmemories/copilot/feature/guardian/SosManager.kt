@@ -20,6 +20,7 @@ class SosManager(
     private val emergencyContacts: () -> List<String>,
     private val lastKnownLocation: () -> Location?,
     private val onCountdownTick: (secondsLeft: Int) -> Unit = {},
+    private val smsSender: (phoneNumber: String, message: String) -> Unit = ::sendSmsViaAndroid,
 ) {
 
     private var countdownJob: Job? = null
@@ -44,21 +45,29 @@ class SosManager(
 
     private fun sendSos() {
         val location = lastKnownLocation()
-        val position = location?.let {
-            "https://maps.google.com/?q=${it.latitude},${it.longitude}"
-        } ?: "position indisponible"
-        val message = "⚠️ SOS MK Copilot : un accident a peut-être eu lieu. " +
-            "Dernière position : $position"
-
-        @Suppress("DEPRECATION")
-        val smsManager = SmsManager.getDefault()
-        emergencyContacts().forEach { number ->
-            smsManager.sendTextMessage(number, null, message, null, null)
-        }
+        val message = sosMessage(location?.latitude, location?.longitude)
+        emergencyContacts().forEach { number -> smsSender(number, message) }
         // TODO v1.1 : afficher l'appel 112 pré-composé sur l'écran du téléphone.
     }
 
     companion object {
         const val COUNTDOWN_SECONDS = 30
+
+        /** Message SOS envoyé aux contacts d'urgence, avec lien position si connue. */
+        internal fun sosMessage(latitude: Double?, longitude: Double?): String {
+            val position =
+                if (latitude != null && longitude != null) {
+                    "https://maps.google.com/?q=$latitude,$longitude"
+                } else {
+                    "position indisponible"
+                }
+            return "⚠️ SOS MK Copilot : un accident a peut-être eu lieu. " +
+                "Dernière position : $position"
+        }
+
+        @Suppress("DEPRECATION")
+        private fun sendSmsViaAndroid(phoneNumber: String, message: String) {
+            SmsManager.getDefault().sendTextMessage(phoneNumber, null, message, null, null)
+        }
     }
 }
