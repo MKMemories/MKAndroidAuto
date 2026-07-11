@@ -4,6 +4,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -27,7 +28,8 @@ object UpdateChecker {
         baseUrl: String = "https://api.github.com",
     ): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            val connection = URL("$baseUrl/repos/MKMemories/MKAndroidAuto/releases/latest")
+            // La liste (et non /releases/latest) : ce dernier ignore les préreleases
+            val connection = URL("$baseUrl/repos/MKMemories/MKAndroidAuto/releases?per_page=10")
                 .openConnection() as HttpURLConnection
             try {
                 connection.connectTimeout = 8_000
@@ -44,12 +46,22 @@ object UpdateChecker {
         }
     }
 
+    /** Le plus grand numéro de build strictement supérieur au build installé. */
     internal fun parse(body: String, currentBuild: Int): UpdateInfo? {
-        val release = JSONObject(body)
+        val releases = JSONArray(body)
+        var best: UpdateInfo? = null
+        for (r in 0 until releases.length()) {
+            val candidate = parseRelease(releases.getJSONObject(r)) ?: continue
+            if (candidate.buildNumber > (best?.buildNumber ?: currentBuild)) {
+                best = candidate
+            }
+        }
+        return best
+    }
+
+    private fun parseRelease(release: JSONObject): UpdateInfo? {
         val buildNumber = TAG_PATTERN.find(release.optString("tag_name"))
             ?.groupValues?.get(1)?.toIntOrNull() ?: return null
-        if (buildNumber <= currentBuild) return null
-
         val assets = release.optJSONArray("assets") ?: return null
         for (i in 0 until assets.length()) {
             val asset = assets.getJSONObject(i)
