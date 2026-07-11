@@ -31,13 +31,13 @@ class TripTest {
     @Test
     fun `le voyage de demonstration a des etapes pour aujourd'hui`() {
         // Garantit que l'écran Android Auto n'est jamais vide en démo
-        val demo = TripRepository.currentTrip()
+        val demo = TripRepository.demoTrip()
         assertTrue(demo.stopsFor(LocalDate.now()).isNotEmpty())
     }
 
     @Test
     fun `les etapes de demonstration ont des coordonnees plausibles (France)`() {
-        val demo = TripRepository.currentTrip()
+        val demo = TripRepository.demoTrip()
         demo.days.flatMap { it.stops }.forEach { stop ->
             assertTrue("${stop.name} : latitude hors de France", stop.latitude in 41.0..51.5)
             assertTrue("${stop.name} : longitude hors de France", stop.longitude in -5.5..9.9)

@@ -22,9 +22,11 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
+import com.mkmemories.copilot.feature.roadtrip.DayBriefing
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
 import com.mkmemories.copilot.feature.roadtrip.TripStop
+import com.mkmemories.copilot.feature.roadtrip.timeLabel
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -52,7 +54,7 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     override fun onGetTemplate(): Template {
-        val trip = TripRepository.currentTrip()
+        val trip = TripRepository.currentTrip(carContext)
         val stops = trip.stopsFor(LocalDate.now())
         // Les étapes restantes d'abord : ce sont elles qu'on veut au premier regard
         val ordered = stops.withIndex().sortedBy { it.value.visited }
@@ -111,7 +113,8 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
                 )
             }
         } else {
-            SpannableString("Étape $number — appuyer pour y aller")
+            val prefix = stop.timeLabel()?.let { "$it — " } ?: ""
+            SpannableString("${prefix}Étape $number — appuyer pour y aller")
         }
 
         return Row.Builder()
@@ -128,21 +131,21 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
             .build()
     }
 
-    /** Briefing météo lu dans les haut-parleurs de la voiture, sans quitter la route des yeux. */
+    /** Briefing météo + étapes du jour, lu dans les haut-parleurs sans quitter la route des yeux. */
     private fun playBriefing() {
         if (briefingLoading) return
         briefingLoading = true
         CarToast.makeText(carContext, "Briefing en préparation…", CarToast.LENGTH_SHORT).show()
         lifecycleScope.launch {
-            try {
+            val weather = try {
                 // TODO v1.1 : utiliser la vraie position (FusedLocationProvider).
-                val text = WeatherBriefingGenerator.generate(latitude = 48.8566, longitude = 2.3522)
-                briefingPlayer.speak(text)
+                WeatherBriefingGenerator.generate(latitude = 48.8566, longitude = 2.3522)
             } catch (e: Exception) {
-                CarToast.makeText(carContext, "Météo indisponible pour l'instant", CarToast.LENGTH_LONG).show()
-            } finally {
-                briefingLoading = false
+                "Météo indisponible pour l'instant."
             }
+            val stops = TripRepository.currentTrip(carContext).stopsFor(LocalDate.now())
+            briefingPlayer.speak(DayBriefing.compose(weather, stops))
+            briefingLoading = false
         }
     }
 }

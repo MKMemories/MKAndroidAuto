@@ -1,6 +1,7 @@
 package com.mkmemories.copilot.feature.roadtrip
 
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * Modèle du "mode Road Trip" : un voyage planifié sur plusieurs jours,
@@ -26,4 +27,8 @@ data class TripStop(
     val latitude: Double,
     val longitude: Double,
     val visited: Boolean = false,
+    /** Ville / île / région du lieu (issue de l'autocomplétion) — sert à enrichir le PDF. */
+    val locality: String? = null,
+    /** Heure de rendez-vous, optionnelle (visite guidée, ferry, restaurant…). */
+    val time: LocalTime? = null,
 )
