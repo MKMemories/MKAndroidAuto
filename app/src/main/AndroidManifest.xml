@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Pack Ange gardien : SOS et "J'arrive bien" par SMS (fonctionne sans données mobiles) -->
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- La téléphonie reste optionnelle : l'app fonctionne sur tablettes/ChromeOS sans SMS -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
     <!-- Briefing météo (Open-Meteo), open data radars, backend IA optionnel (clé Mistral de l'utilisateur) -->
     <uses-permission android:name="android.permission.INTERNET" />
 
