@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fond de l'icône adaptative (échantillonné sur l'emblème bouclier) -->
+    <color name="ic_launcher_background">#141B23</color>
+
+    <!-- Palette nordique MK Copilot (assortie aux visuels) -->
+    <color name="brand_night">#0D1420</color>       <!-- fond charbon nuit -->
+    <color name="brand_ice">#38D6FF</color>         <!-- cyan glacier -->
+    <color name="brand_aurora_teal">#2EE6A8</color> <!-- vert aurore -->
+    <color name="brand_aurora_violet">#8B5CF6</color><!-- violet aurore -->
+    <color name="brand_ember">#FF6B2C</color>       <!-- orange braise -->
+    <color name="brand_gold">#E8B84B</color>        <!-- or bruni -->
+</resources>
