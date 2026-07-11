@@ -1,0 +1,35 @@
+name: Publier l'APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Construire l'APK release (signé debug pour l'essai)
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Publier en Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "mk-copilot-build-${{ github.run_number }}.apk"
+          gh release create "apk-build-${{ github.run_number }}" \
+            "mk-copilot-build-${{ github.run_number }}.apk" \
+            --title "MK Copilot — APK d'essai (build ${{ github.run_number }})" \
+            --notes "APK release minifié, signé avec la clé debug (essai uniquement, pas pour le Play Store). Branche : ${{ github.ref_name }}, commit : ${{ github.sha }}" \
+            --prerelease \
+            --target "${{ github.sha }}"
