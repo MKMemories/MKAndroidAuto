@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Numéro de build injecté par la CI (-PbuildNumber=N) : versionne les APK
+// d'essai et alimente la vérification de mise à jour intégrée
+val buildNumber = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 0
+
 android {
     namespace = "com.mkmemories.copilot"
     compileSdk = 35
@@ -12,8 +16,21 @@ android {
         applicationId = "com.mkmemories.copilot"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = if (buildNumber > 0) buildNumber else 1
+        versionName = "0.1.0" + if (buildNumber > 0) " (build $buildNumber)" else ""
+        buildConfigField("int", "BUILD_NUMBER", "$buildNumber")
+    }
+
+    signingConfigs {
+        // Clé d'ESSAI committée volontairement : elle garantit une signature
+        // stable entre les builds CI pour que la mise à jour intégrée installe
+        // par-dessus. TODO Play Store : vraie clé via secrets, jamais dans git.
+        create("testing") {
+            storeFile = rootProject.file("keystore/testing.keystore")
+            storePassword = "mkcopilot"
+            keyAlias = "mkcopilot"
+            keyPassword = "mkcopilot"
+        }
     }
 
     buildTypes {
@@ -21,8 +38,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // TODO release Play Store : remplacer par une vraie clé de signature
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("testing")
         }
     }
 
@@ -37,6 +53,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {

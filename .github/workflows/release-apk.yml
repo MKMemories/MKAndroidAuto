@@ -20,10 +20,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Construire l'APK release (signé debug pour l'essai)
+      - name: Construire l'APK release (clé d'essai, numéro de build injecté)
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon -PbuildNumber=${{ github.run_number }}
 
       - name: Publier en Release GitHub
         env:
