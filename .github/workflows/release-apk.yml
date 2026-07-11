@@ -5,8 +5,6 @@ on:
   push:
     branches:
       - "claude/network-domains-test-build-5gz8mx"
-    paths:
-      - ".github/workflows/release-apk.yml"
 
 permissions:
   contents: write
