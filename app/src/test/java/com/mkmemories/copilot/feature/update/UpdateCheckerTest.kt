@@ -7,17 +7,19 @@ import org.junit.Test
 /** Mise à jour intégrée : ne proposer que les builds strictement plus récents. */
 class UpdateCheckerTest {
 
-    private fun release(tag: String, apkName: String = "mk-copilot-build-7.apk") = """
-        {"tag_name":"$tag","name":"MK Copilot — APK d'essai (build 7)",
+    private fun release(build: Int, withApk: Boolean = true) = """
+        {"tag_name":"apk-build-$build","name":"MK Copilot — APK d'essai (build $build)",
          "assets":[
-           {"name":"notes.txt","browser_download_url":"https://example.com/notes.txt"},
-           {"name":"$apkName","browser_download_url":"https://github.com/MKMemories/MKAndroidAuto/releases/download/$tag/$apkName"}
+           {"name":"notes.txt","browser_download_url":"https://example.com/notes.txt"}
+           ${if (withApk) """,{"name":"mk-copilot-build-$build.apk",
+             "browser_download_url":"https://github.com/MKMemories/MKAndroidAuto/releases/download/apk-build-$build/mk-copilot-build-$build.apk"}""" else ""}
          ]}
     """.trimIndent()
 
     @Test
-    fun `un build plus recent est propose avec son lien APK direct`() {
-        val update = UpdateChecker.parse(release("apk-build-7"), currentBuild = 3)!!
+    fun `le build le plus recent de la liste est propose avec son lien APK direct`() {
+        val body = "[${release(7)},${release(5)},${release(3)}]"
+        val update = UpdateChecker.parse(body, currentBuild = 3)!!
         assertEquals(7, update.buildNumber)
         assertEquals("MK Copilot — APK d'essai (build 7)", update.title)
         assertEquals(
@@ -27,19 +29,21 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `pas de proposition pour le meme build ou un plus ancien`() {
-        assertNull(UpdateChecker.parse(release("apk-build-7"), currentBuild = 7))
-        assertNull(UpdateChecker.parse(release("apk-build-7"), currentBuild = 12))
+    fun `l'ordre de la liste n'importe pas - c'est le numero qui compte`() {
+        val body = "[${release(2)},${release(9)},${release(4)}]"
+        assertEquals(9, UpdateChecker.parse(body, currentBuild = 1)!!.buildNumber)
     }
 
     @Test
-    fun `tag inattendu ou release sans APK = null, jamais d'erreur`() {
-        assertNull(UpdateChecker.parse(release("v1.2.3"), currentBuild = 1))
-        assertNull(
-            UpdateChecker.parse(
-                """{"tag_name":"apk-build-9","assets":[{"name":"notes.txt","browser_download_url":"x"}]}""",
-                currentBuild = 1,
-            ),
-        )
+    fun `pas de proposition pour le meme build ou un plus ancien`() {
+        assertNull(UpdateChecker.parse("[${release(7)}]", currentBuild = 7))
+        assertNull(UpdateChecker.parse("[${release(7)}]", currentBuild = 12))
+    }
+
+    @Test
+    fun `une release sans APK ou au tag inattendu est ignoree`() {
+        assertNull(UpdateChecker.parse("[${release(9, withApk = false)}]", currentBuild = 1))
+        assertNull(UpdateChecker.parse("""[{"tag_name":"v1.2.3","assets":[]}]""", currentBuild = 1))
+        assertNull(UpdateChecker.parse("[]", currentBuild = 1))
     }
 }

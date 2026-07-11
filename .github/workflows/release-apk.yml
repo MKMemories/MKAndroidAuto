@@ -33,6 +33,5 @@ jobs:
           gh release create "apk-build-${{ github.run_number }}" \
             "mk-copilot-build-${{ github.run_number }}.apk" \
             --title "MK Copilot — APK d'essai (build ${{ github.run_number }})" \
-            --notes "APK release minifié, signé avec la clé debug (essai uniquement, pas pour le Play Store). Branche : ${{ github.ref_name }}, commit : ${{ github.sha }}" \
-            --prerelease \
+            --notes "APK release minifié, signé avec la clé d'essai (pas pour le Play Store). Branche : ${{ github.ref_name }}, commit : ${{ github.sha }}" \
             --target "${{ github.sha }}"
