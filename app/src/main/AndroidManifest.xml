@@ -10,8 +10,10 @@
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
-    <!-- Briefing météo (Open-Meteo), open data radars, backend IA optionnel (clé Mistral de l'utilisateur) -->
+    <!-- Briefing météo (Open-Meteo), recherche de lieux (Photon/OSM), Wikipédia, open data radars -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Import des rendez-vous du jour depuis l'agenda du téléphone (Google Agenda inclus) -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <application
         android:label="@string/app_name"
@@ -36,6 +38,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Partage du carnet de voyage PDF généré dans le cache -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Service Car App Library — catégorie POI (validée pour le road trip / points d'intérêt) -->
         <service

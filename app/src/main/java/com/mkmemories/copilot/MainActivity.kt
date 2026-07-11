@@ -41,6 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -74,9 +75,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
+import com.mkmemories.copilot.feature.roadtrip.DayBriefing
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
+import com.mkmemories.copilot.feature.roadtrip.Trip
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
 import com.mkmemories.copilot.feature.roadtrip.TripStop
+import com.mkmemories.copilot.feature.roadtrip.timeLabel
+import com.mkmemories.copilot.ui.planner.PlannerScreen
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
 import com.mkmemories.copilot.ui.theme.BrandAuroraViolet
 import com.mkmemories.copilot.ui.theme.BrandEmber
@@ -101,7 +106,18 @@ class MainActivity : ComponentActivity() {
         briefingPlayer = BriefingPlayer(this)
         setContent {
             MKCopilotTheme {
-                HomeScreen(onPlayBriefing = { text -> briefingPlayer.speak(text) })
+                var screen by rememberSaveable { mutableStateOf(AppScreen.HOME) }
+                when (screen) {
+                    AppScreen.HOME -> {
+                        val trip = remember(screen) { TripRepository.currentTrip(this) }
+                        HomeScreen(
+                            trip = trip,
+                            onPlayBriefing = { text -> briefingPlayer.speak(text) },
+                            onOpenPlanner = { screen = AppScreen.PLANNER },
+                        )
+                    }
+                    AppScreen.PLANNER -> PlannerScreen(onBack = { screen = AppScreen.HOME })
+                }
             }
         }
     }
@@ -111,6 +127,8 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
+private enum class AppScreen { HOME, PLANNER }
 
 // ---------------------------------------------------------------------------
 // Écran d'accueil
@@ -130,7 +148,7 @@ private val Features = listOf(
 )
 
 @Composable
-private fun HomeScreen(onPlayBriefing: (String) -> Unit) {
+private fun HomeScreen(trip: Trip, onPlayBriefing: (String) -> Unit, onOpenPlanner: () -> Unit) {
     val scroll = rememberScrollState()
     var appeared by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
@@ -176,10 +194,10 @@ private fun HomeScreen(onPlayBriefing: (String) -> Unit) {
             Reveal(appeared, index = 0) { HeroTitle() }
 
             Spacer(Modifier.height(28.dp))
-            Reveal(appeared, index = 1) { BriefingCard(onPlayBriefing) }
+            Reveal(appeared, index = 1) { BriefingCard(trip, onPlayBriefing) }
 
             Spacer(Modifier.height(16.dp))
-            Reveal(appeared, index = 2) { RoadTripCard() }
+            Reveal(appeared, index = 2) { RoadTripCard(trip, onOpenPlanner) }
 
             Spacer(Modifier.height(28.dp))
             Reveal(appeared, index = 3) {
@@ -260,23 +278,25 @@ private fun HeroTitle() {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun BriefingCard(onPlayBriefing: (String) -> Unit) {
+private fun BriefingCard(trip: Trip, onPlayBriefing: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var loading by remember { mutableStateOf(false) }
     var briefing by remember { mutableStateOf<String?>(null) }
+    val todayStops = remember(trip) { trip.stopsFor(LocalDate.now()) }
 
     fun fetch() {
         if (loading) return
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         loading = true
         scope.launch {
-            briefing = try {
+            val weather = try {
                 // TODO v1.1 : utiliser la vraie position (FusedLocationProvider).
                 WeatherBriefingGenerator.generate(latitude = 48.8566, longitude = 2.3522)
             } catch (e: Exception) {
-                "Impossible de récupérer la météo pour l'instant. Vérifiez votre connexion et réessayez."
+                "Météo indisponible pour l'instant."
             }
+            briefing = DayBriefing.compose(weather, todayStops)
             loading = false
             briefing?.let(onPlayBriefing)
         }
@@ -287,7 +307,7 @@ private fun BriefingCard(onPlayBriefing: (String) -> Unit) {
             Text("Briefing du jour", style = MaterialTheme.typography.titleLarge, color = Color.White)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Météo, pluie, vent — lu à voix haute dans les haut-parleurs de la voiture.",
+                "Météo, pluie, vent et vos étapes du jour — lus à voix haute dans les haut-parleurs de la voiture.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = BrandMist,
             )
@@ -331,18 +351,27 @@ private fun BriefingCard(onPlayBriefing: (String) -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun RoadTripCard() {
+private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val trip = remember { TripRepository.currentTrip() }
     val stops = remember(trip) { trip.stopsFor(LocalDate.now()) }
 
     NordicCard {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text(trip.name, style = MaterialTheme.typography.titleLarge, color = Color.White)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    trip.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onOpenPlanner) {
+                    Icon(Icons.Rounded.Edit, contentDescription = "Planifier les étapes", tint = BrandGold)
+                }
+            }
             Spacer(Modifier.height(2.dp))
             Text(
-                if (stops.isEmpty()) "Aucune étape prévue aujourd'hui"
+                if (stops.isEmpty()) "Aucune étape prévue aujourd'hui — touchez le crayon pour planifier."
                 else "Aujourd'hui — ${stops.size} étapes. Touchez-en une pour lancer Maps.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = BrandMist,
@@ -432,7 +461,10 @@ private fun StopRow(index: Int, stop: TripStop, onClick: () -> Unit) {
                 color = Color.White.copy(alpha = contentAlpha),
             )
             Text(
-                if (stop.visited) "Visité" else "Lancer la navigation",
+                listOfNotNull(
+                    stop.timeLabel(),
+                    if (stop.visited) "Visité" else "Lancer la navigation",
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = (if (stop.visited) BrandAuroraTeal else BrandIce).copy(alpha = contentAlpha),
             )
