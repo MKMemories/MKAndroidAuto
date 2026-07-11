@@ -16,10 +16,14 @@ import kotlin.math.roundToInt
  */
 object WeatherBriefingGenerator {
 
-    suspend fun generate(latitude: Double, longitude: Double): String =
+    suspend fun generate(
+        latitude: Double,
+        longitude: Double,
+        baseUrl: String = "https://api.open-meteo.com",
+    ): String =
         withContext(Dispatchers.IO) {
             val url = URL(
-                "https://api.open-meteo.com/v1/forecast" +
+                "$baseUrl/v1/forecast" +
                     "?latitude=$latitude&longitude=$longitude" +
                     "&current=temperature_2m,weather_code,wind_speed_10m" +
                     "&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max" +
@@ -36,7 +40,7 @@ object WeatherBriefingGenerator {
             }
         }
 
-    private fun buildBriefing(json: JSONObject): String {
+    internal fun buildBriefing(json: JSONObject): String {
         val current = json.getJSONObject("current")
         val daily = json.getJSONObject("daily")
 
@@ -57,7 +61,7 @@ object WeatherBriefingGenerator {
     }
 
     /** Codes météo WMO utilisés par Open-Meteo, en français. */
-    private fun skyLabel(code: Int): String = when (code) {
+    internal fun skyLabel(code: Int): String = when (code) {
         0 -> "ciel dégagé"
         1, 2 -> "légèrement nuageux"
         3 -> "ciel couvert"
