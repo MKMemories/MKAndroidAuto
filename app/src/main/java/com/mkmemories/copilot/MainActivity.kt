@@ -78,7 +78,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -88,7 +87,6 @@ import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
 import com.mkmemories.copilot.feature.guardian.ArrivalNotifier
 import com.mkmemories.copilot.feature.guardian.DriveGuardService
 import com.mkmemories.copilot.feature.guardian.ParkingMemory
-import com.mkmemories.copilot.feature.guardian.ParkingReminderReceiver
 import com.mkmemories.copilot.feature.location.LocationProvider
 import com.mkmemories.copilot.feature.settings.Feature
 import com.mkmemories.copilot.feature.settings.SettingsStore
