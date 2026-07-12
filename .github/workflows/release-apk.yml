@@ -33,5 +33,5 @@ jobs:
           gh release create "apk-build-${{ github.run_number }}" \
             "mk-copilot-build-${{ github.run_number }}.apk" \
             --title "MK Copilot — APK d'essai (build ${{ github.run_number }})" \
-            --notes "APK release minifié, signé avec la clé d'essai (pas pour le Play Store). Branche : ${{ github.ref_name }}, commit : ${{ github.sha }}" \
+            --notes "APK release minifié, signé avec la clé d'essai (pas pour le Play Store). ⚠️ Si Android affiche « Application non installée » : une version antérieure au build 4 (ancienne signature) est encore installée — désinstallez MK Copilot une fois, puis réinstallez ; ensuite les mises à jour s'installent par-dessus via le bandeau intégré. Branche : ${{ github.ref_name }}, commit : ${{ github.sha }}" \
             --target "${{ github.sha }}"
