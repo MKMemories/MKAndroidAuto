@@ -22,6 +22,10 @@ data class CarnetVoyage(
 
     /** Les trajets roulables (ceux qui nourrissent la navigation). */
     val drives: List<CarnetEntry> get() = entries.filter { it.kind == EntryKind.DRIVE && it.destination != null }
+
+    /** Tous les points navigables (trajets + lieux à visiter géolocalisés). */
+    val navStops: List<CarnetEntry>
+        get() = entries.filter { (it.kind == EntryKind.DRIVE || it.kind == EntryKind.VISIT) && it.destination != null }
 }
 
 data class CarnetPhase(
@@ -45,7 +49,7 @@ data class CarnetPhase(
 }
 
 /** Nature d'une entrée du carnet — pilote l'icône et la mise en forme. */
-enum class EntryKind { DRIVE, FLIGHT, FERRY, CAR, LODGING }
+enum class EntryKind { DRIVE, FLIGHT, FERRY, CAR, LODGING, VISIT }
 
 /** Lieu géolocalisé, destination d'un trajet voiture. */
 data class CarnetPlace(
@@ -55,6 +59,9 @@ data class CarnetPlace(
     val locality: String? = null,
 )
 
+/** Lien attaché à une étape (réservation, site, billet, Google Maps…). */
+data class CarnetLink(val label: String, val url: String)
+
 data class CarnetEntry(
     val id: String,
     val kind: EntryKind,
@@ -62,6 +69,12 @@ data class CarnetEntry(
     val detail: String,
     val date: LocalDate,
     val time: LocalTime? = null,
-    /** Présente pour les trajets voiture : la navigation guide vers ce point. */
+    /** Présente pour les trajets voiture / lieux à visiter : la navigation guide vers ce point. */
     val destination: CarnetPlace? = null,
+    /** Liens attachés par l'utilisateur (réservations, billets, cartes…). */
+    val links: List<CarnetLink> = emptyList(),
+    /** Chemins locaux des photos souvenirs attachées à l'étape. */
+    val photos: List<String> = emptyList(),
+    /** Vrai si l'étape a été ajoutée par l'utilisateur (modifiable / supprimable). */
+    val custom: Boolean = false,
 )

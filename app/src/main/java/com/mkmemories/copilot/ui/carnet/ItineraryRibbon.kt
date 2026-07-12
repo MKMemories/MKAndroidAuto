@@ -233,5 +233,6 @@ private fun EntryKind?.glyph(): String = when (this) {
     EntryKind.FERRY -> "⛴️"
     EntryKind.CAR -> "🚗"
     EntryKind.LODGING -> "🏡"
+    EntryKind.VISIT -> "📍"
     null -> "•"
 }

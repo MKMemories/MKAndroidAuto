@@ -13,7 +13,7 @@ import java.time.LocalDate
  * s'alimente jour après jour, sans double saisie.
  */
 fun CarnetVoyage.toTrip(): Trip {
-    val days = drives
+    val days = navStops
         .groupBy { it.date }
         .toSortedMap()
         .map { (date, list) ->
