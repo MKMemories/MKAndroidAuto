@@ -90,8 +90,9 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
             ordered.forEach { (index, stop) -> listBuilder.addItem(stopRow(index + 1, stop)) }
         }
 
-        val nextStop = stops.firstOrNull { !it.visited }
-
+        // Contrainte ListTemplate : au plus UNE action avec titre dans la barre.
+        // On garde « Briefing » ; la navigation vers la prochaine étape se fait
+        // en touchant la première ligne (les étapes restantes sont en tête).
         val actionStrip = ActionStrip.Builder()
             .addAction(
                 Action.Builder()
@@ -99,16 +100,6 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
                     .setOnClickListener { playBriefing() }
                     .build(),
             )
-            .apply {
-                nextStop?.let { next ->
-                    addAction(
-                        Action.Builder()
-                            .setTitle("▶ Étape suivante")
-                            .setOnClickListener { NavigationLauncher.navigateFromCar(carContext, next) }
-                            .build(),
-                    )
-                }
-            }
             .build()
 
         return ListTemplate.Builder()
