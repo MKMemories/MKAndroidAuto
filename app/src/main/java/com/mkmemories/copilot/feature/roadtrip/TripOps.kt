@@ -21,6 +21,17 @@ fun Trip.withoutStop(date: LocalDate, stop: TripStop): Trip =
             .filter { it.stops.isNotEmpty() },
     )
 
+/** Modifie une étape en place (heure de rendez-vous, nom…) sans changer l'ordre. */
+fun Trip.withUpdatedStop(date: LocalDate, index: Int, transform: (TripStop) -> TripStop): Trip =
+    copy(
+        days = days.map { day ->
+            if (day.date != date || index !in day.stops.indices) return@map day
+            day.copy(
+                stops = day.stops.mapIndexed { i, stop -> if (i == index) transform(stop) else stop },
+            )
+        },
+    )
+
 fun Trip.withMovedStop(date: LocalDate, index: Int, delta: Int): Trip =
     copy(
         days = days.map { day ->
