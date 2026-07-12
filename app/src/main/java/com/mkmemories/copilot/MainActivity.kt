@@ -93,12 +93,16 @@ import com.mkmemories.copilot.feature.settings.SettingsStore
 import com.mkmemories.copilot.feature.voice.VoiceCommand
 import com.mkmemories.copilot.feature.voice.VoiceCommands
 import com.mkmemories.copilot.ui.parking.ParkingScreen
+import com.mkmemories.copilot.ui.carnet.CarnetScreen
+import com.mkmemories.copilot.feature.carnet.GreeceOdyssey
+import com.mkmemories.copilot.feature.carnet.nextDriveDay
 import com.mkmemories.copilot.feature.roadtrip.DayBriefing
 import com.mkmemories.copilot.ui.settings.SettingsScreen
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
 import com.mkmemories.copilot.feature.roadtrip.Trip
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
 import com.mkmemories.copilot.feature.roadtrip.TripStop
+import com.mkmemories.copilot.feature.roadtrip.frenchLabel
 import com.mkmemories.copilot.feature.roadtrip.timeLabel
 import com.mkmemories.copilot.feature.update.UpdateChecker
 import com.mkmemories.copilot.feature.update.UpdateInfo
@@ -143,11 +147,13 @@ class MainActivity : ComponentActivity() {
                             onOpenPlanner = { screen = AppScreen.PLANNER },
                             onOpenSettings = { screen = AppScreen.SETTINGS },
                             onOpenParking = { screen = AppScreen.PARKING },
+                            onOpenCarnet = { screen = AppScreen.CARNET },
                         )
                     }
                     AppScreen.PLANNER -> PlannerScreen(onBack = { screen = AppScreen.HOME })
                     AppScreen.SETTINGS -> SettingsScreen(onBack = { screen = AppScreen.HOME })
                     AppScreen.PARKING -> ParkingScreen(onBack = { screen = AppScreen.HOME })
+                    AppScreen.CARNET -> CarnetScreen(onBack = { screen = AppScreen.HOME })
                 }
             }
         }
@@ -159,7 +165,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppScreen { HOME, PLANNER, SETTINGS, PARKING }
+private enum class AppScreen { HOME, PLANNER, SETTINGS, PARKING, CARNET }
 
 // ---------------------------------------------------------------------------
 // Écran d'accueil
@@ -185,6 +191,7 @@ private fun HomeScreen(
     onOpenPlanner: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenParking: () -> Unit,
+    onOpenCarnet: () -> Unit,
 ) {
     val homeContext = LocalContext.current
     val scroll = rememberScrollState()
@@ -241,10 +248,13 @@ private fun HomeScreen(
             }
 
             Spacer(Modifier.height(28.dp))
-            Reveal(appeared, index = 1) { BriefingCard(trip, onPlayBriefing) }
+            Reveal(appeared, index = 1) { CarnetCard(onOpenCarnet) }
 
             Spacer(Modifier.height(16.dp))
-            Reveal(appeared, index = 2) { RoadTripCard(trip, onOpenPlanner, onOpenParking) }
+            Reveal(appeared, index = 2) { BriefingCard(trip, onPlayBriefing) }
+
+            Spacer(Modifier.height(16.dp))
+            Reveal(appeared, index = 3) { RoadTripCard(trip, onOpenPlanner, onOpenParking) }
 
             Spacer(Modifier.height(28.dp))
             Reveal(appeared, index = 3) {
@@ -470,6 +480,48 @@ private fun BriefingCard(trip: Trip, onPlayBriefing: (String) -> Unit) {
 // ---------------------------------------------------------------------------
 // Road trip du jour
 // ---------------------------------------------------------------------------
+
+/** Carte d'accueil « Carnet de voyage » : point d'entrée vers le compagnon complet. */
+@Composable
+private fun CarnetCard(onOpenCarnet: () -> Unit) {
+    val carnet = remember { GreeceOdyssey.itinerary() }
+    val nextDay = remember { carnet.nextDriveDay(LocalDate.now()) }
+
+    NordicCard {
+        Column(
+            modifier = Modifier
+                .clickable(onClick = onOpenCarnet)
+                .padding(20.dp),
+        ) {
+            Text("CARNET DE VOYAGE", style = MaterialTheme.typography.labelSmall, color = BrandGold.copy(alpha = 0.85f))
+            Spacer(Modifier.height(6.dp))
+            Text(carnet.title, style = MaterialTheme.typography.titleLarge, color = Color.White)
+            Text(
+                "${carnet.subtitle} · ${carnet.travelers}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = BrandMist,
+            )
+            Spacer(Modifier.height(10.dp))
+            val next = nextDay?.stops?.firstOrNull()
+            Text(
+                if (next != null) "Prochaine route : ${next.name} — ${nextDay.date.frenchLabel()}"
+                else "Voyage terminé — vos souvenirs vous attendent.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = BrandIce,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(BrandGold.copy(alpha = 0.15f))
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Ouvrir le carnet  →", style = MaterialTheme.typography.labelLarge, color = BrandGold)
+            }
+        }
+    }
+}
 
 @Composable
 private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit, onOpenParking: () -> Unit) {
