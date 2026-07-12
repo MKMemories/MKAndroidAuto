@@ -3,4 +3,5 @@
     <cache-path name="pdf" path="pdf/" />
     <cache-path name="share" path="share/" />
     <files-path name="blackbox" path="blackbox/" />
+    <files-path name="logs" path="logs/" />
 </paths>

@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.mkmemories.copilot.feature.diag.AppLog
 import com.mkmemories.copilot.feature.settings.Feature
 import com.mkmemories.copilot.feature.settings.SettingsStore
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
@@ -309,6 +310,69 @@ fun SettingsScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = BrandMist.copy(alpha = 0.7f),
                 )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // --- Diagnostic : journal d'exécution + crashs ---------------------
+            SettingsCard(title = "Diagnostic") {
+                Text(
+                    "Le journal enregistre l'exécution et les erreurs (y compris les crashs " +
+                        "sur Android Auto). Partagez-le pour faire diagnostiquer un problème.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BrandMist,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Exporter le journal",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = BrandGold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(BrandGold.copy(alpha = 0.14f))
+                            .border(1.dp, BrandGold.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .clickable {
+                                val file = AppLog.file()
+                                if (file == null || !AppLog.hasContent()) {
+                                    Toast.makeText(context, "Journal vide pour l'instant", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    try {
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context, "${context.packageName}.fileprovider", file,
+                                        )
+                                        context.startActivity(
+                                            android.content.Intent.createChooser(
+                                                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Journal MK Copilot")
+                                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                },
+                                                "Partager le journal",
+                                            ),
+                                        )
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Partage impossible", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Text(
+                        "Effacer",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = BrandEmber,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                AppLog.clear()
+                                Toast.makeText(context, "Journal effacé", Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                }
             }
 
             Spacer(Modifier.height(28.dp))

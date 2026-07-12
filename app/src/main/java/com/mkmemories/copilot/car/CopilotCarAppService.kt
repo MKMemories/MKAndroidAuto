@@ -7,6 +7,7 @@ import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import com.mkmemories.copilot.feature.diag.AppLog
 import com.mkmemories.copilot.feature.guardian.DriveGuardService
 import com.mkmemories.copilot.feature.guardian.ParkingMemory
 import com.mkmemories.copilot.feature.location.LocationProvider
@@ -19,7 +20,10 @@ class CopilotCarAppService : CarAppService() {
     override fun createHostValidator(): HostValidator =
         HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
 
-    override fun onCreateSession(): Session = CopilotSession()
+    override fun onCreateSession(): Session {
+        AppLog.i("car", "onCreateSession — Android Auto connecté")
+        return CopilotSession()
+    }
 }
 
 class CopilotSession : Session() {
@@ -45,5 +49,8 @@ class CopilotSession : Session() {
         // téléphone (bouton « Prendre la route »), contexte où c'est permis.
     }
 
-    override fun onCreateScreen(intent: Intent): Screen = RoadTripScreen(carContext)
+    override fun onCreateScreen(intent: Intent): Screen {
+        AppLog.i("car", "onCreateScreen")
+        return RoadTripScreen(carContext)
+    }
 }

@@ -26,6 +26,7 @@ import com.mkmemories.copilot.feature.ai.BriefingEnricher
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
 import com.mkmemories.copilot.feature.dangerzones.ZoneAlertEngine
+import com.mkmemories.copilot.feature.diag.AppLog
 import com.mkmemories.copilot.feature.guardian.DriveGuardService
 import com.mkmemories.copilot.feature.location.LocationProvider
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
@@ -48,13 +49,17 @@ private val CarAuroraTeal = CarColor.createCustom(0xFF1FA97D.toInt(), 0xFF2EE6A8
  */
 class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
 
-    private val briefingPlayer = BriefingPlayer(carContext)
+    // Créé à la première demande de briefing seulement : instancier le moteur
+    // vocal (TextToSpeech) au constructeur de l'écran peut échouer côté voiture.
+    private var briefingPlayer: BriefingPlayer? = null
     private var briefingLoading = false
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onResume(owner: LifecycleOwner) = invalidate() // distances et ✓ à jour
-            override fun onDestroy(owner: LifecycleOwner) = briefingPlayer.release()
+            override fun onDestroy(owner: LifecycleOwner) {
+                runCatching { briefingPlayer?.release() }
+            }
         })
     }
 
@@ -62,6 +67,7 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
         try {
             buildTemplate()
         } catch (e: Exception) {
+            AppLog.error("car", "onGetTemplate a échoué — repli affiché", e)
             // Jamais de crash/ANR sur l'écran voiture : repli minimal lisible
             PlaceListMapTemplate.Builder()
                 .setTitle("MK Copilot")
@@ -75,6 +81,7 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
         }
 
     private fun buildTemplate(): Template {
+        AppLog.i("car", "buildTemplate")
         val trip = TripRepository.currentTrip(carContext)
         val stops = trip.stopsFor(LocalDate.now())
         val here = runCatching {
@@ -183,15 +190,22 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
         briefingLoading = true
         CarToast.makeText(carContext, "Briefing en préparation…", CarToast.LENGTH_SHORT).show()
         lifecycleScope.launch {
-            val (latitude, longitude) = LocationProvider.coordinatesOrFallback(carContext)
-            val weather = try {
-                WeatherBriefingGenerator.generate(latitude, longitude)
+            try {
+                val (latitude, longitude) = LocationProvider.coordinatesOrFallback(carContext)
+                val weather = try {
+                    WeatherBriefingGenerator.generate(latitude, longitude)
+                } catch (e: Exception) {
+                    "Météo indisponible pour l'instant."
+                }
+                val stops = TripRepository.currentTrip(carContext).stopsFor(LocalDate.now())
+                val player = briefingPlayer ?: BriefingPlayer(carContext).also { briefingPlayer = it }
+                player.speak(BriefingEnricher.enrich(carContext, weather, stops))
             } catch (e: Exception) {
-                "Météo indisponible pour l'instant."
+                AppLog.error("car", "playBriefing a échoué", e)
+                CarToast.makeText(carContext, "Briefing indisponible pour l'instant", CarToast.LENGTH_LONG).show()
+            } finally {
+                briefingLoading = false
             }
-            val stops = TripRepository.currentTrip(carContext).stopsFor(LocalDate.now())
-            briefingPlayer.speak(BriefingEnricher.enrich(carContext, weather, stops))
-            briefingLoading = false
         }
     }
 }
