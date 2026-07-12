@@ -8,15 +8,9 @@ import androidx.car.app.Screen
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.CarColor
-import androidx.car.app.model.CarLocation
-import androidx.car.app.model.Distance
-import androidx.car.app.model.DistanceSpan
 import androidx.car.app.model.ForegroundCarColorSpan
 import androidx.car.app.model.ItemList
-import androidx.car.app.model.Metadata
-import androidx.car.app.model.Place
-import androidx.car.app.model.PlaceListMapTemplate
-import androidx.car.app.model.PlaceMarker
+import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.Template
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -25,9 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import com.mkmemories.copilot.feature.ai.BriefingEnricher
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
-import com.mkmemories.copilot.feature.dangerzones.ZoneAlertEngine
 import com.mkmemories.copilot.feature.diag.AppLog
-import com.mkmemories.copilot.feature.guardian.DriveGuardService
 import com.mkmemories.copilot.feature.location.LocationProvider
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
@@ -36,27 +28,30 @@ import com.mkmemories.copilot.feature.roadtrip.timeLabel
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
-// Or bruni et vert aurore de la charte, en couleurs voiture (thème clair / sombre)
-private val CarGold = CarColor.createCustom(0xFFE8B84B.toInt(), 0xFFE8B84B.toInt())
+// Vert aurore de la charte, en couleur voiture (thème clair / sombre)
 private val CarAuroraTeal = CarColor.createCustom(0xFF1FA97D.toInt(), 0xFF2EE6A8.toInt())
 
 /**
- * Écran principal sur Android Auto : carte + étapes du jour du road trip.
+ * Écran principal sur Android Auto : les étapes du jour du road trip.
  *
- * Ergonomie conduite : repères numérotés sur la carte, distance réelle vers
- * chaque étape, « Étape suivante » en un tap dans la barre d'actions, étapes
- * visitées en vert en fin de liste, briefing vocal sans quitter la route.
+ * Template : ListTemplate (liste standard). Volontairement PAS de template
+ * carte (PlaceListMapTemplate), qui exige la permission androidx.car.app.
+ * MAP_TEMPLATES et une distance sur chaque ligne — deux contraintes qui le
+ * rendaient fragile. La liste est fiable, sans permission spéciale.
+ *
+ * Ergonomie conduite : étapes numérotées et datées, « Étape suivante » en un
+ * tap dans la barre d'actions, visitées en vert en fin de liste, briefing
+ * vocal sans quitter la route.
  */
 class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
 
-    // Créé à la première demande de briefing seulement : instancier le moteur
-    // vocal (TextToSpeech) au constructeur de l'écran peut échouer côté voiture.
+    // Créé à la première demande de briefing seulement.
     private var briefingPlayer: BriefingPlayer? = null
     private var briefingLoading = false
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onResume(owner: LifecycleOwner) = invalidate() // distances et ✓ à jour
+            override fun onResume(owner: LifecycleOwner) = invalidate() // ✓ visités à jour
             override fun onDestroy(owner: LifecycleOwner) {
                 runCatching { briefingPlayer?.release() }
             }
@@ -68,11 +63,10 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
             buildTemplate()
         } catch (e: Exception) {
             AppLog.error("car", "onGetTemplate a échoué — repli affiché", e)
-            // Jamais de crash/ANR sur l'écran voiture : repli minimal lisible
-            PlaceListMapTemplate.Builder()
+            ListTemplate.Builder()
                 .setTitle("MK Copilot")
                 .setHeaderAction(Action.APP_ICON)
-                .setItemList(
+                .setSingleList(
                     ItemList.Builder()
                         .setNoItemsMessage("Préparez votre voyage sur le téléphone, puis reconnectez-vous.")
                         .build(),
@@ -84,9 +78,6 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
         AppLog.i("car", "buildTemplate")
         val trip = TripRepository.currentTrip(carContext)
         val stops = trip.stopsFor(LocalDate.now())
-        val here = runCatching {
-            DriveGuardService.lastLocation ?: LocationProvider.lastKnown(carContext)
-        }.getOrNull()
         // Les étapes restantes d'abord : ce sont elles qu'on veut au premier regard
         val ordered = stops.withIndex().sortedBy { it.value.visited }
 
@@ -96,13 +87,10 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
                 "Aucune étape aujourd'hui. Planifiez votre voyage sur le téléphone — profitez de la route !",
             )
         } else {
-            ordered.forEach { (index, stop) ->
-                listBuilder.addItem(stopRow(index + 1, stop, here?.latitude, here?.longitude))
-            }
+            ordered.forEach { (index, stop) -> listBuilder.addItem(stopRow(index + 1, stop)) }
         }
 
         val nextStop = stops.firstOrNull { !it.visited }
-        val anchorStop = nextStop ?: stops.firstOrNull()
 
         val actionStrip = ActionStrip.Builder()
             .addAction(
@@ -123,55 +111,27 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
             }
             .build()
 
-        return PlaceListMapTemplate.Builder()
+        return ListTemplate.Builder()
             .setTitle(trip.name)
             .setHeaderAction(Action.APP_ICON)
-            .setItemList(listBuilder.build())
-            .apply {
-                anchorStop?.let {
-                    setAnchor(
-                        Place.Builder(CarLocation.create(it.latitude, it.longitude))
-                            .setMarker(PlaceMarker.Builder().setColor(CarGold).build())
-                            .build(),
-                    )
-                }
-            }
+            .setSingleList(listBuilder.build())
             .setActionStrip(actionStrip)
             .build()
     }
 
-    /** Une étape : repère numéroté, distance réelle, heure, statut colorié. */
-    private fun stopRow(number: Int, stop: TripStop, hereLat: Double?, hereLng: Double?): Row {
-        val marker = PlaceMarker.Builder()
-            .setLabel("$number")
-            .setColor(if (stop.visited) CarAuroraTeal else CarGold)
-            .build()
-        val place = Place.Builder(CarLocation.create(stop.latitude, stop.longitude))
-            .setMarker(marker)
-            .build()
-
+    /** Une étape : numéro dans le titre, heure + statut, tap = navigation. */
+    private fun stopRow(number: Int, stop: TripStop): Row {
         val status: CharSequence = if (stop.visited) {
             SpannableString("Visité ✓").apply {
                 setSpan(ForegroundCarColorSpan.create(CarAuroraTeal), 0, length, Spanned.SPAN_INCLUSIVE_EXCLUSIVE)
             }
         } else {
             val timePrefix = stop.timeLabel()?.let { "$it — " } ?: ""
-            if (hereLat != null && hereLng != null) {
-                // "~ 12 km — 09h30 — appuyer pour y aller", distance rendue par l'hôte
-                val meters = ZoneAlertEngine.distanceMeters(hereLat, hereLng, stop.latitude, stop.longitude)
-                val distance =
-                    if (meters >= 1_000) Distance.create(meters / 1_000, Distance.UNIT_KILOMETERS)
-                    else Distance.create(meters, Distance.UNIT_METERS)
-                SpannableString("  — ${timePrefix}appuyer pour y aller").apply {
-                    setSpan(DistanceSpan.create(distance), 0, 1, Spanned.SPAN_INCLUSIVE_EXCLUSIVE)
-                }
-            } else {
-                SpannableString("${timePrefix}Étape $number — appuyer pour y aller")
-            }
+            "${timePrefix}Appuyer pour lancer la navigation"
         }
 
         return Row.Builder()
-            .setTitle(stop.name)
+            .setTitle("$number.  ${stop.name}")
             .addText(status)
             .setOnClickListener {
                 if (stop.visited) {
@@ -180,7 +140,6 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
                     NavigationLauncher.navigateFromCar(carContext, stop)
                 }
             }
-            .setMetadata(Metadata.Builder().setPlace(place).build())
             .build()
     }
 
