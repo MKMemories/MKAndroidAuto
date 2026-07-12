@@ -44,6 +44,10 @@ Le tout s'exécute d'un trait : `gradle testDebugUnitTest lintDebug assembleDebu
 | Enrichissement Wikipédia | `PlaceEnrichmentTest` | extrait restitué, homonymies écartées, 404 et extrait absent → null (jamais bloquant pour l'export) |
 | Carnet PDF | `TripPdfLayoutTest` | sections triées et datées en français, numérotation par journée, heure de rendez-vous dans le sous-titre, description par localité, sous-titre redondant omis, une requête d'enrichissement par localité unique |
 | Mise à jour intégrée | `UpdateCheckerTest` | build le plus récent proposé avec lien APK, même build/plus ancien ignoré, ordre de liste indifférent, release sans APK ou tag inattendu ignorée |
+| Réglages | `SettingsStoreTest` | défauts sûrs (SMS d'arrivée opt-in), contacts nettoyés/dédupliqués, persistance des listes, clé blanche → null |
+| Géofencing d'arrivée | `ArrivalWatcherTest` | arrivée dans le rayon 150 m détectée une seule fois, étapes visitées ignorées, réarmement en sortie de rayon, 200 m = pas encore arrivé |
+| Open data radars | `RadarOpenDataRepositoryTest` | parseur tolérant (en-têtes repérés, lignes invalides ignorées), mapping vitesses françaises (110+ autoroute, 80+ route, sinon ville), résolution d'URL via l'API, cache 30 j (téléchargement, fraîcheur, erreur réseau → anciennes données préservées) |
+| IA enrichissement | `BriefingEnricherTest` | sans clé → texte local tel quel (priorité au moteur local), prompt avec consignes voix et anti-hallucination |
 | Briefing météo | `WeatherBriefingGeneratorTest`, `WeatherBriefingIntegrationTest` | seuils pluie (40 %) et vent (50 km/h), arrondis, 19 codes WMO, erreurs serveur → exception (jamais de briefing mensonger) |
 | SOS / Ange gardien | `SosManagerTest`, `CrashDetectorTest` | 30 ticks puis SMS à tous les contacts, annulation → zéro SMS, anti-doublon, lien Maps, seuil ~6 g jamais atteint en conduite normale |
 | J'arrive bien | `ArrivalNotifierTest` | horodatage français, minutes sur 2 chiffres, tous les proches notifiés |
@@ -82,6 +86,14 @@ avant chaque release :
 8. **Mise à jour intégrée** : le bandeau apparaît quand une release plus
    récente existe, le tap télécharge l'APK, l'installation par-dessus
    fonctionne (signature stable).
+9. **Service de conduite sur device** : notification permanente pendant la
+   conduite, choc simulé → écran « Tout va bien ? » plein écran (même
+   verrouillé) → annulation ou SMS + 112 ; arrivée réelle à une étape →
+   voix + ✓ + SMS « J'arrive bien » ; parking mémorisé à la déconnexion
+   d'Android Auto ; consommation batterie acceptable sur un trajet long.
+10. **Radars réels** : premier téléchargement data.gouv.fr (URL résolue via
+    l'API du jeu de données), alerte vocale en passant dans une zone,
+    fonctionnement hors ligne ensuite.
 
 ## Bugs corrigés par ce plan (première exécution)
 

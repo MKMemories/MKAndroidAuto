@@ -6,8 +6,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -44,6 +46,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,9 +77,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.mkmemories.copilot.feature.ai.BriefingEnricher
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
+import com.mkmemories.copilot.feature.guardian.DriveGuardService
+import com.mkmemories.copilot.feature.location.LocationProvider
 import com.mkmemories.copilot.feature.roadtrip.DayBriefing
+import com.mkmemories.copilot.ui.settings.SettingsScreen
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
 import com.mkmemories.copilot.feature.roadtrip.Trip
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
@@ -117,9 +124,11 @@ class MainActivity : ComponentActivity() {
                             trip = trip,
                             onPlayBriefing = { text -> briefingPlayer.speak(text) },
                             onOpenPlanner = { screen = AppScreen.PLANNER },
+                            onOpenSettings = { screen = AppScreen.SETTINGS },
                         )
                     }
                     AppScreen.PLANNER -> PlannerScreen(onBack = { screen = AppScreen.HOME })
+                    AppScreen.SETTINGS -> SettingsScreen(onBack = { screen = AppScreen.HOME })
                 }
             }
         }
@@ -131,7 +140,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppScreen { HOME, PLANNER }
+private enum class AppScreen { HOME, PLANNER, SETTINGS }
 
 // ---------------------------------------------------------------------------
 // Écran d'accueil
@@ -151,7 +160,12 @@ private val Features = listOf(
 )
 
 @Composable
-private fun HomeScreen(trip: Trip, onPlayBriefing: (String) -> Unit, onOpenPlanner: () -> Unit) {
+private fun HomeScreen(
+    trip: Trip,
+    onPlayBriefing: (String) -> Unit,
+    onOpenPlanner: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     val scroll = rememberScrollState()
     var appeared by rememberSaveable { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -244,6 +258,21 @@ private fun HomeScreen(trip: Trip, onPlayBriefing: (String) -> Unit, onOpenPlann
             }
             Spacer(Modifier.height(32.dp))
         }
+
+        // Réglages, toujours accessible en haut à droite
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 4.dp, end = 8.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Settings,
+                contentDescription = "Réglages",
+                tint = Color.White.copy(alpha = 0.92f),
+            )
+        }
     }
 }
 
@@ -327,27 +356,39 @@ private fun UpdateCard(info: UpdateInfo) {
 
 @Composable
 private fun BriefingCard(trip: Trip, onPlayBriefing: (String) -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var loading by remember { mutableStateOf(false) }
     var briefing by remember { mutableStateOf<String?>(null) }
     val todayStops = remember(trip) { trip.stopsFor(LocalDate.now()) }
 
-    fun fetch() {
-        if (loading) return
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    fun doFetch() {
         loading = true
         scope.launch {
+            val location = LocationProvider.current(context)
+            val latitude = location?.latitude ?: LocationProvider.FALLBACK_LATITUDE
+            val longitude = location?.longitude ?: LocationProvider.FALLBACK_LONGITUDE
             val weather = try {
-                // TODO v1.1 : utiliser la vraie position (FusedLocationProvider).
-                WeatherBriefingGenerator.generate(latitude = 48.8566, longitude = 2.3522)
+                WeatherBriefingGenerator.generate(latitude, longitude)
             } catch (e: Exception) {
                 "Météo indisponible pour l'instant."
             }
-            briefing = DayBriefing.compose(weather, todayStops)
+            briefing = BriefingEnricher.enrich(context, weather, todayStops)
             loading = false
             briefing?.let(onPlayBriefing)
         }
+    }
+
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { doFetch() } // même refusée, le briefing part avec le repli
+
+    fun fetch() {
+        if (loading) return
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (LocationProvider.hasPermission(context)) doFetch()
+        else locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
     NordicCard {
@@ -473,7 +514,60 @@ private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit) {
                     )
                 }
             }
+
+            DriveModeRow()
         }
+    }
+}
+
+/**
+ * « Prendre la route » : démarre l'Ange gardien à la main (il démarre déjà
+ * tout seul quand Android Auto se connecte).
+ */
+@Composable
+private fun DriveModeRow() {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    var driving by remember { mutableStateOf(DriveGuardService.running) }
+
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        DriveGuardService.start(context) // même refusée : choc et SOS restent actifs
+        driving = true
+    }
+
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (driving) {
+                    DriveGuardService.stop(context)
+                    driving = false
+                } else if (LocationProvider.hasPermission(context)) {
+                    DriveGuardService.start(context)
+                    driving = true
+                } else {
+                    locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                }
+            }
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (driving) Icons.Rounded.CheckCircle else Icons.Rounded.PlayArrow,
+            contentDescription = null,
+            tint = if (driving) BrandAuroraTeal else BrandIce,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.size(10.dp))
+        Text(
+            if (driving) "Ange gardien actif — toucher pour arrêter"
+            else "Prendre la route — activer l'Ange gardien",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (driving) BrandAuroraTeal else BrandIce,
+        )
     }
 }
 

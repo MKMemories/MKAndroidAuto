@@ -9,6 +9,8 @@ import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.CarColor
 import androidx.car.app.model.CarLocation
+import androidx.car.app.model.Distance
+import androidx.car.app.model.DistanceSpan
 import androidx.car.app.model.ForegroundCarColorSpan
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.Metadata
@@ -20,9 +22,12 @@ import androidx.car.app.model.Template
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.mkmemories.copilot.feature.ai.BriefingEnricher
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
-import com.mkmemories.copilot.feature.roadtrip.DayBriefing
+import com.mkmemories.copilot.feature.dangerzones.ZoneAlertEngine
+import com.mkmemories.copilot.feature.guardian.DriveGuardService
+import com.mkmemories.copilot.feature.location.LocationProvider
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
 import com.mkmemories.copilot.feature.roadtrip.TripStop
@@ -37,10 +42,9 @@ private val CarAuroraTeal = CarColor.createCustom(0xFF1FA97D.toInt(), 0xFF2EE6A8
 /**
  * Écran principal sur Android Auto : carte + étapes du jour du road trip.
  *
- * Ergonomie conduite : repères numérotés dans l'ordre du voyage directement
- * sur la carte, un tap = handoff navigation, étapes visitées reléguées en
- * vert sous les étapes restantes, et le briefing météo à un tap dans la
- * barre d'actions — tout est faisable d'un coup d'œil.
+ * Ergonomie conduite : repères numérotés sur la carte, distance réelle vers
+ * chaque étape, « Étape suivante » en un tap dans la barre d'actions, étapes
+ * visitées en vert en fin de liste, briefing vocal sans quitter la route.
  */
 class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
 
@@ -49,6 +53,7 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onResume(owner: LifecycleOwner) = invalidate() // distances et ✓ à jour
             override fun onDestroy(owner: LifecycleOwner) = briefingPlayer.release()
         })
     }
@@ -56,25 +61,49 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
     override fun onGetTemplate(): Template {
         val trip = TripRepository.currentTrip(carContext)
         val stops = trip.stopsFor(LocalDate.now())
+        val here = DriveGuardService.lastLocation ?: LocationProvider.lastKnown(carContext)
         // Les étapes restantes d'abord : ce sont elles qu'on veut au premier regard
         val ordered = stops.withIndex().sortedBy { it.value.visited }
 
         val listBuilder = ItemList.Builder()
         if (stops.isEmpty()) {
-            listBuilder.setNoItemsMessage("Aucune étape prévue aujourd'hui — profitez de la route !")
+            listBuilder.setNoItemsMessage(
+                "Aucune étape aujourd'hui. Planifiez votre voyage sur le téléphone — profitez de la route !",
+            )
         } else {
-            ordered.forEach { (index, stop) -> listBuilder.addItem(stopRow(index + 1, stop)) }
+            ordered.forEach { (index, stop) ->
+                listBuilder.addItem(stopRow(index + 1, stop, here?.latitude, here?.longitude))
+            }
         }
 
-        val nextStop = stops.firstOrNull { !it.visited } ?: stops.firstOrNull()
+        val nextStop = stops.firstOrNull { !it.visited }
+        val anchorStop = nextStop ?: stops.firstOrNull()
+
+        val actionStrip = ActionStrip.Builder()
+            .addAction(
+                Action.Builder()
+                    .setTitle("Briefing")
+                    .setOnClickListener { playBriefing() }
+                    .build(),
+            )
+            .apply {
+                nextStop?.let { next ->
+                    addAction(
+                        Action.Builder()
+                            .setTitle("▶ Étape suivante")
+                            .setOnClickListener { NavigationLauncher.navigateFromCar(carContext, next) }
+                            .build(),
+                    )
+                }
+            }
+            .build()
 
         return PlaceListMapTemplate.Builder()
             .setTitle(trip.name)
             .setHeaderAction(Action.APP_ICON)
             .setItemList(listBuilder.build())
             .apply {
-                // Carte centrée sur la prochaine étape, marquée à l'or de l'emblème
-                nextStop?.let {
+                anchorStop?.let {
                     setAnchor(
                         Place.Builder(CarLocation.create(it.latitude, it.longitude))
                             .setMarker(PlaceMarker.Builder().setColor(CarGold).build())
@@ -82,21 +111,12 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
                     )
                 }
             }
-            .setActionStrip(
-                ActionStrip.Builder()
-                    .addAction(
-                        Action.Builder()
-                            .setTitle("Briefing")
-                            .setOnClickListener { playBriefing() }
-                            .build(),
-                    )
-                    .build(),
-            )
+            .setActionStrip(actionStrip)
             .build()
     }
 
-    /** Une étape : repère numéroté sur la carte, statut colorié, tap = navigation. */
-    private fun stopRow(number: Int, stop: TripStop): Row {
+    /** Une étape : repère numéroté, distance réelle, heure, statut colorié. */
+    private fun stopRow(number: Int, stop: TripStop, hereLat: Double?, hereLng: Double?): Row {
         val marker = PlaceMarker.Builder()
             .setLabel("$number")
             .setColor(if (stop.visited) CarAuroraTeal else CarGold)
@@ -105,16 +125,24 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
             .setMarker(marker)
             .build()
 
-        val status = if (stop.visited) {
+        val status: CharSequence = if (stop.visited) {
             SpannableString("Visité ✓").apply {
-                setSpan(
-                    ForegroundCarColorSpan.create(CarAuroraTeal),
-                    0, length, Spanned.SPAN_INCLUSIVE_EXCLUSIVE,
-                )
+                setSpan(ForegroundCarColorSpan.create(CarAuroraTeal), 0, length, Spanned.SPAN_INCLUSIVE_EXCLUSIVE)
             }
         } else {
-            val prefix = stop.timeLabel()?.let { "$it — " } ?: ""
-            SpannableString("${prefix}Étape $number — appuyer pour y aller")
+            val timePrefix = stop.timeLabel()?.let { "$it — " } ?: ""
+            if (hereLat != null && hereLng != null) {
+                // "~ 12 km — 09h30 — appuyer pour y aller", distance rendue par l'hôte
+                val meters = ZoneAlertEngine.distanceMeters(hereLat, hereLng, stop.latitude, stop.longitude)
+                val distance =
+                    if (meters >= 1_000) Distance.create(meters / 1_000, Distance.UNIT_KILOMETERS)
+                    else Distance.create(meters, Distance.UNIT_METERS)
+                SpannableString("  — ${timePrefix}appuyer pour y aller").apply {
+                    setSpan(DistanceSpan.create(distance), 0, 1, Spanned.SPAN_INCLUSIVE_EXCLUSIVE)
+                }
+            } else {
+                SpannableString("${timePrefix}Étape $number — appuyer pour y aller")
+            }
         }
 
         return Row.Builder()
@@ -131,20 +159,20 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
             .build()
     }
 
-    /** Briefing météo + étapes du jour, lu dans les haut-parleurs sans quitter la route des yeux. */
+    /** Briefing météo localisé + étapes du jour, enrichi par l'IA (locale, puis Mistral). */
     private fun playBriefing() {
         if (briefingLoading) return
         briefingLoading = true
         CarToast.makeText(carContext, "Briefing en préparation…", CarToast.LENGTH_SHORT).show()
         lifecycleScope.launch {
+            val (latitude, longitude) = LocationProvider.coordinatesOrFallback(carContext)
             val weather = try {
-                // TODO v1.1 : utiliser la vraie position (FusedLocationProvider).
-                WeatherBriefingGenerator.generate(latitude = 48.8566, longitude = 2.3522)
+                WeatherBriefingGenerator.generate(latitude, longitude)
             } catch (e: Exception) {
                 "Météo indisponible pour l'instant."
             }
             val stops = TripRepository.currentTrip(carContext).stopsFor(LocalDate.now())
-            briefingPlayer.speak(DayBriefing.compose(weather, stops))
+            briefingPlayer.speak(BriefingEnricher.enrich(carContext, weather, stops))
             briefingLoading = false
         }
     }

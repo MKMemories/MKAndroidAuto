@@ -21,6 +21,7 @@ class SosManager(
     private val lastKnownLocation: () -> Location?,
     private val onCountdownTick: (secondsLeft: Int) -> Unit = {},
     private val smsSender: (phoneNumber: String, message: String) -> Unit = ::sendSmsViaAndroid,
+    private val onSosSent: () -> Unit = {},
 ) {
 
     private var countdownJob: Job? = null
@@ -47,7 +48,7 @@ class SosManager(
         val location = lastKnownLocation()
         val message = sosMessage(location?.latitude, location?.longitude)
         emergencyContacts().forEach { number -> smsSender(number, message) }
-        // TODO v1.1 : afficher l'appel 112 pré-composé sur l'écran du téléphone.
+        onSosSent()
     }
 
     companion object {
