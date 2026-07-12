@@ -101,7 +101,11 @@ fun ParkingScreen(onBack: () -> Unit) {
             if (here != null) {
                 memory.saveParkingSpot(here.latitude, here.longitude, System.currentTimeMillis())
                 spot = memory.lastParkingSpot()
-                Toast.makeText(context, "Place enregistrée ✓", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    "Place enregistrée ✓  ${ParkingFormat.coordinates(here.latitude, here.longitude)}",
+                    Toast.LENGTH_LONG,
+                ).show()
             } else {
                 Toast.makeText(context, "Position introuvable — activez la localisation", Toast.LENGTH_LONG).show()
             }
@@ -157,6 +161,31 @@ fun ParkingScreen(onBack: () -> Unit) {
                     distanceLabel?.let {
                         Text("À environ $it à vol d'oiseau", style = MaterialTheme.typography.bodyLarge, color = BrandIce)
                     }
+
+                    val mapsUrl = ParkingFormat.googleMapsUrl(currentSpot.latitude, currentSpot.longitude)
+                    Spacer(Modifier.height(8.dp))
+                    // Coordonnées enregistrées + lien Google Maps : info concrète et exploitable.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "📍 ${ParkingFormat.coordinates(currentSpot.latitude, currentSpot.longitude)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = BrandMist,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val clip = context.getSystemService(android.content.ClipboardManager::class.java)
+                                    clip?.setPrimaryClip(android.content.ClipData.newPlainText("Ma voiture", mapsUrl))
+                                    Toast.makeText(context, "Lien Google Maps copié", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(vertical = 4.dp),
+                        )
+                        Spacer(Modifier.size(10.dp))
+                        Text(
+                            "Copier",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = BrandIce,
+                        )
+                    }
                     Spacer(Modifier.height(14.dp))
 
                     PrimaryButton(
@@ -179,6 +208,31 @@ fun ParkingScreen(onBack: () -> Unit) {
                             } catch (e2: ActivityNotFoundException) {
                                 Toast.makeText(context, "Aucune app de cartes disponible", Toast.LENGTH_SHORT).show()
                             }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SecondaryButton(
+                            text = "Ouvrir dans Maps",
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapsUrl)))
+                            } catch (e: ActivityNotFoundException) {
+                                Toast.makeText(context, "Aucune app de cartes disponible", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        SecondaryButton(
+                            text = "Partager",
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            val share = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Où est ma voiture")
+                                putExtra(Intent.EXTRA_TEXT, "Ma voiture est garée ici : $mapsUrl")
+                            }
+                            context.startActivity(Intent.createChooser(share, "Partager la position"))
                         }
                     }
 
@@ -301,6 +355,21 @@ private fun PrimaryButton(icon: @Composable () -> Unit, text: String, onClick: (
         icon()
         Spacer(Modifier.size(10.dp))
         Text(text, style = MaterialTheme.typography.labelLarge, color = BrandNight)
+    }
+}
+
+@Composable
+private fun SecondaryButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier = modifier
+            .height(46.dp)
+            .clip(RoundedCornerShape(23.dp))
+            .border(1.5.dp, BrandAuroraTeal.copy(alpha = 0.7f), RoundedCornerShape(23.dp))
+            .clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = BrandAuroraTeal)
     }
 }
 

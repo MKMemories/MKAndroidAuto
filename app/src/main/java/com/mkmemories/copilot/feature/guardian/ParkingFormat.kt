@@ -24,4 +24,15 @@ object ParkingFormat {
     fun distanceLabel(meters: Double): String =
         if (meters < 1_000) "${meters.roundToInt()} m"
         else String.format(Locale.FRENCH, "%.1f km", meters / 1_000)
+
+    /** Coordonnées lisibles et copiables, ex. « 48.856600, 2.352200 ». */
+    fun coordinates(latitude: Double, longitude: Double): String =
+        String.format(Locale.US, "%.6f, %.6f", latitude, longitude)
+
+    /**
+     * Vrai lien Google Maps (place épinglée), ouvrable et partageable.
+     * Ex. https://www.google.com/maps/search/?api=1&query=48.856600,2.352200
+     */
+    fun googleMapsUrl(latitude: Double, longitude: Double): String =
+        String.format(Locale.US, "https://www.google.com/maps/search/?api=1&query=%.6f,%.6f", latitude, longitude)
 }

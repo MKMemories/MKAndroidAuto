@@ -27,4 +27,18 @@ class ParkingFormatTest {
         assertEquals("1,2 km", ParkingFormat.distanceLabel(1200.0))
         assertEquals("12,5 km", ParkingFormat.distanceLabel(12_460.0))
     }
+
+    @Test
+    fun `coordinates - point decimal universel a 6 decimales`() {
+        assertEquals("48.856600, 2.352200", ParkingFormat.coordinates(48.8566, 2.3522))
+        assertEquals("-33.868800, 151.209300", ParkingFormat.coordinates(-33.8688, 151.2093))
+    }
+
+    @Test
+    fun `googleMapsUrl - lien maps valide avec point decimal`() {
+        assertEquals(
+            "https://www.google.com/maps/search/?api=1&query=48.856600,2.352200",
+            ParkingFormat.googleMapsUrl(48.8566, 2.3522),
+        )
+    }
 }
