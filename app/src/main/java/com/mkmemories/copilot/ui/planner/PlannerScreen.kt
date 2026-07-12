@@ -7,6 +7,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,8 +65,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.mkmemories.copilot.feature.calendar.CalendarImporter
 import com.mkmemories.copilot.feature.places.PlaceSearch
@@ -647,6 +652,7 @@ private fun DayCard(
     val context = LocalContext.current
     var editingTimeFor by remember { mutableStateOf<Int?>(null) }
     var photoFor by remember { mutableStateOf<Int?>(null) }
+    var viewingPhoto by remember { mutableStateOf<String?>(null) }
 
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -732,14 +738,19 @@ private fun DayCard(
                         Text(sub, style = MaterialTheme.typography.bodySmall, color = BrandMist, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (stop.photoPath != null) {
-                    Spacer(Modifier.size(8.dp))
-                    Text("📷", style = MaterialTheme.typography.bodyLarge)
-                }
+            }
+            // Vignette photo premium : visible, agrandissable, supprimable
+            stop.photoPath?.let { path ->
+                Spacer(Modifier.height(10.dp))
+                StopPhotoBanner(
+                    path = path,
+                    onView = { viewingPhoto = path },
+                    onDelete = { onSetPhoto(index, null) },
+                )
             }
             // Ligne 2 : barre d'actions compacte, alignée à droite
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -797,6 +808,84 @@ private fun DayCard(
             },
             text = { TimePicker(state = timeState) },
         )
+    }
+
+    viewingPhoto?.let { path ->
+        PhotoViewerDialog(path = path, onDismiss = { viewingPhoto = null })
+    }
+}
+
+/** Vignette photo d'une étape : aperçu net, tap pour agrandir, croix pour supprimer. */
+@Composable
+private fun StopPhotoBanner(path: String, onView: () -> Unit, onDelete: () -> Unit) {
+    val bitmap = remember(path) {
+        runCatching { BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = 2 })?.asImageBitmap() }.getOrNull()
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(BrandSurface)
+            .clickable(onClick = onView),
+    ) {
+        if (bitmap != null) {
+            Image(bitmap = bitmap, contentDescription = "Photo de l'étape", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Photo indisponible", color = BrandMist, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        // Bouton supprimer
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(BrandNight.copy(alpha = 0.62f))
+                .clickable(onClick = onDelete),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Clear, contentDescription = "Supprimer la photo", tint = BrandEmber, modifier = Modifier.size(18.dp))
+        }
+        // Indice « agrandir »
+        Text(
+            "🔍 Agrandir",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(BrandNight.copy(alpha = 0.55f))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+/** Visualiseur plein écran de la photo. */
+@Composable
+private fun PhotoViewerDialog(path: String, onDismiss: () -> Unit) {
+    val bitmap = remember(path) {
+        runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull()
+    }
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(BrandNight)
+                .clickable(onClick = onDismiss)
+                .padding(8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (bitmap != null) {
+                Image(bitmap = bitmap, contentDescription = "Photo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
+            } else {
+                Text("Photo indisponible", color = BrandMist, modifier = Modifier.padding(40.dp))
+            }
+        }
     }
 }
 
