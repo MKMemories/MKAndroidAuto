@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -699,62 +700,70 @@ private fun DayCard(
         }
         Spacer(Modifier.height(6.dp))
         day.stops.forEachIndexed { index, stop ->
+            if (index > 0) {
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(BrandMist.copy(alpha = 0.10f)))
+                Spacer(Modifier.height(8.dp))
+            }
+            // Ligne 1 : pastille numérotée + titre pleine largeur + sous-titre
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
-                        .border(1.5.dp, BrandGold.copy(alpha = 0.8f), CircleShape),
+                        .size(30.dp)
+                        .border(1.5.dp, BrandGold.copy(alpha = 0.85f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = BrandGold)
                 }
-                Spacer(Modifier.size(10.dp))
+                Spacer(Modifier.size(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(stop.name, style = MaterialTheme.typography.titleMedium, color = Color.White)
-                    val sub = listOfNotNull(
-                        stop.timeLabel(),
-                        stop.locality,
-                        if (stop.photoPath != null) "📷" else null,
-                    ).joinToString(" · ")
+                    Text(
+                        stop.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val sub = listOfNotNull(stop.timeLabel(), stop.locality).joinToString(" · ")
                     if (sub.isNotBlank()) {
-                        Text(sub, style = MaterialTheme.typography.bodyMedium, color = BrandMist)
+                        Text(sub, style = MaterialTheme.typography.bodySmall, color = BrandMist, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+                if (stop.photoPath != null) {
+                    Spacer(Modifier.size(8.dp))
+                    Text("📷", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+            // Ligne 2 : barre d'actions compacte, alignée à droite
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (photosEnabled) {
-                    IconButton(onClick = {
+                    PlannerAction(onClick = {
                         photoFor = index
                         photoPicker.launch(
-                            androidx.activity.result.PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                            ),
+                            androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                         )
                     }) {
-                        Text(
-                            "📷",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                color = if (stop.photoPath != null) BrandAuroraTeal else BrandMist.copy(alpha = 0.5f),
-                            ),
-                        )
+                        Text("📷", style = MaterialTheme.typography.bodyMedium.copy(color = if (stop.photoPath != null) BrandAuroraTeal else BrandMist.copy(alpha = 0.55f)))
                     }
                 }
-                IconButton(onClick = { editingTimeFor = index }) {
-                    Icon(
-                        Icons.Rounded.Notifications,
-                        contentDescription = "Modifier l'heure",
-                        tint = if (stop.time != null) BrandGold else BrandMist.copy(alpha = 0.5f),
-                    )
+                PlannerAction(onClick = { editingTimeFor = index }) {
+                    Icon(Icons.Rounded.Notifications, contentDescription = "Modifier l'heure", tint = if (stop.time != null) BrandGold else BrandMist.copy(alpha = 0.55f), modifier = Modifier.size(19.dp))
                 }
-                IconButton(onClick = { onMove(index, -1) }, enabled = index > 0) {
-                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Monter", tint = if (index > 0) BrandIce else BrandMist.copy(alpha = 0.3f))
+                PlannerAction(onClick = { onMove(index, -1) }, enabled = index > 0) {
+                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Monter", tint = if (index > 0) BrandIce else BrandMist.copy(alpha = 0.3f), modifier = Modifier.size(21.dp))
                 }
-                IconButton(onClick = { onMove(index, +1) }, enabled = index < day.stops.lastIndex) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Descendre", tint = if (index < day.stops.lastIndex) BrandIce else BrandMist.copy(alpha = 0.3f))
+                PlannerAction(onClick = { onMove(index, +1) }, enabled = index < day.stops.lastIndex) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Descendre", tint = if (index < day.stops.lastIndex) BrandIce else BrandMist.copy(alpha = 0.3f), modifier = Modifier.size(21.dp))
                 }
-                IconButton(onClick = { onRemove(stop) }) {
-                    Icon(Icons.Rounded.Clear, contentDescription = "Supprimer", tint = BrandEmber)
+                PlannerAction(onClick = { onRemove(stop) }) {
+                    Icon(Icons.Rounded.Clear, contentDescription = "Supprimer", tint = BrandEmber, modifier = Modifier.size(19.dp))
                 }
             }
         }
@@ -911,3 +920,19 @@ private fun plannerFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedLabelColor = BrandMist,
     cursorColor = BrandIce,
 )
+
+/** Bouton d'action compact du planificateur : zone tactile confortable, encombrement minimal. */
+@androidx.compose.runtime.Composable
+private fun PlannerAction(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @androidx.compose.runtime.Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
