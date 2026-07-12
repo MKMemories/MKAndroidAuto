@@ -78,6 +78,7 @@ import com.mkmemories.copilot.feature.roadtrip.pdf.TripPdfExporter
 import com.mkmemories.copilot.feature.roadtrip.timeLabel
 import com.mkmemories.copilot.feature.roadtrip.withMovedStop
 import com.mkmemories.copilot.feature.roadtrip.withStop
+import com.mkmemories.copilot.feature.roadtrip.withUpdatedStop
 import com.mkmemories.copilot.feature.roadtrip.withoutStop
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
 import com.mkmemories.copilot.ui.theme.BrandEmber
@@ -176,6 +177,9 @@ fun PlannerScreen(onBack: () -> Unit) {
                     day = day,
                     onRemove = { stop -> update(trip.withoutStop(day.date, stop)) },
                     onMove = { index, delta -> update(trip.withMovedStop(day.date, index, delta)) },
+                    onSetTime = { index, newTime ->
+                        update(trip.withUpdatedStop(day.date, index) { it.copy(time = newTime) })
+                    },
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -503,8 +507,15 @@ private fun AddStopSection(
 // Journées, étapes, export
 // ---------------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DayCard(day: TripDay, onRemove: (TripStop) -> Unit, onMove: (Int, Int) -> Unit) {
+private fun DayCard(
+    day: TripDay,
+    onRemove: (TripStop) -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onSetTime: (Int, LocalTime?) -> Unit,
+) {
+    var editingTimeFor by remember { mutableStateOf<Int?>(null) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -537,6 +548,13 @@ private fun DayCard(day: TripDay, onRemove: (TripStop) -> Unit, onMove: (Int, In
                         Text(sub, style = MaterialTheme.typography.bodyMedium, color = BrandMist)
                     }
                 }
+                IconButton(onClick = { editingTimeFor = index }) {
+                    Icon(
+                        Icons.Rounded.Notifications,
+                        contentDescription = "Modifier l'heure",
+                        tint = if (stop.time != null) BrandGold else BrandMist.copy(alpha = 0.5f),
+                    )
+                }
                 IconButton(onClick = { onMove(index, -1) }, enabled = index > 0) {
                     Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Monter", tint = if (index > 0) BrandIce else BrandMist.copy(alpha = 0.3f))
                 }
@@ -548,6 +566,36 @@ private fun DayCard(day: TripDay, onRemove: (TripStop) -> Unit, onMove: (Int, In
                 }
             }
         }
+    }
+
+    editingTimeFor?.let { index ->
+        val current = day.stops.getOrNull(index)?.time
+        val timeState = rememberTimePickerState(
+            initialHour = current?.hour ?: 9,
+            initialMinute = current?.minute ?: 0,
+            is24Hour = true,
+        )
+        AlertDialog(
+            onDismissRequest = { editingTimeFor = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    onSetTime(index, LocalTime.of(timeState.hour, timeState.minute))
+                    editingTimeFor = null
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                Row {
+                    if (current != null) {
+                        TextButton(onClick = {
+                            onSetTime(index, null)
+                            editingTimeFor = null
+                        }) { Text("Sans heure") }
+                    }
+                    TextButton(onClick = { editingTimeFor = null }) { Text("Annuler") }
+                }
+            },
+            text = { TimePicker(state = timeState) },
+        )
     }
 }
 

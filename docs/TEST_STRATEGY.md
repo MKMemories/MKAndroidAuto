@@ -38,12 +38,24 @@ Le tout s'exécute d'un trait : `gradle testDebugUnitTest lintDebug assembleDebu
 | Fonctionnalité | Classes de test | Scénarios clés |
 |---|---|---|
 | Road trip | `TripTest`, `NavigationLauncherUrlTest`, `NavigationLauncherRobolectricTest` | étapes du jour, jour vide, limite 9 waypoints Google, encodage `%7C`, intent `google.navigation:` |
+| Planificateur (édition) | `TripOpsTest` | ajout (jour existant / nouveau / voyage vide, tri des jours), suppression (jour vidé supprimé, doublons : une seule occurrence, mauvaise date : no-op), modification (heure posée / changée / effacée, hors bornes : no-op), réordonnancement (haut/bas, bords), isolation entre journées, heures parlées du briefing |
+| Persistance du voyage | `TripStoreTest` | round-trip exact (nom, dates, heures, localités, visites), donnée corrompue → repli démo sans plantage, tri des jours au rechargement |
+| Recherche de lieux | `PlaceSearchTest` | parsing GeoJSON Photon (ordre lng/lat inversé), catégories francisées (Hôtel, Plage…), adresse sans nom → rue+numéro, liste vide, 503 → exception, paramètres q/lang/limit transmis |
+| Enrichissement Wikipédia | `PlaceEnrichmentTest` | extrait restitué, homonymies écartées, 404 et extrait absent → null (jamais bloquant pour l'export) |
+| Carnet PDF | `TripPdfLayoutTest` | sections triées et datées en français, numérotation par journée, heure de rendez-vous dans le sous-titre, description par localité, sous-titre redondant omis, une requête d'enrichissement par localité unique |
+| Mise à jour intégrée | `UpdateCheckerTest` | build le plus récent proposé avec lien APK, même build/plus ancien ignoré, ordre de liste indifférent, release sans APK ou tag inattendu ignorée |
 | Briefing météo | `WeatherBriefingGeneratorTest`, `WeatherBriefingIntegrationTest` | seuils pluie (40 %) et vent (50 km/h), arrondis, 19 codes WMO, erreurs serveur → exception (jamais de briefing mensonger) |
 | SOS / Ange gardien | `SosManagerTest`, `CrashDetectorTest` | 30 ticks puis SMS à tous les contacts, annulation → zéro SMS, anti-doublon, lien Maps, seuil ~6 g jamais atteint en conduite normale |
 | J'arrive bien | `ArrivalNotifierTest` | horodatage français, minutes sur 2 chiffres, tous les proches notifiés |
 | Parking | `ParkingMemoryTest` | vide au départ, précision exacte, remplacement, coordonnées négatives |
 | Zones de danger | `DangerZonesTest` | conformité légale, haversine ±2 % sur Paris→Lyon, alerte à l'entrée, anti-spam, réarmement, zone sans limite connue |
 | IA | `AiEngineTest` | ordre de préférence des backends, repli sans IA, disponibilité Mistral liée à la clé |
+
+Cas volontairement hors périmètre automatique : le déplacement d'une étape
+vers une **autre date** et le changement de **lieu** d'une étape se font par
+suppression + re-ajout (choix v1) ; `CalendarImporter` est une lecture fine
+du CalendarProvider, vérifiée via la checklist manuelle (permission,
+événements journée entière, rendez-vous sans lieu ignorés avec décompte).
 
 ## Ce que l'automatisation ne peut pas couvrir (checklist manuelle)
 
@@ -61,6 +73,15 @@ avant chaque release :
    « J'arrive bien » à l'arrivée.
 5. **Capteurs** : détection d'accident sur choc simulé (chute contrôlée du
    téléphone = faux positif attendu en v1, cf. TODO vitesse GPS).
+6. **Planificateur sur device** : autocomplétion réelle (hôtel à Santorin,
+   adresse en Crète, lieu français), latence de frappe, import agenda
+   (permission au premier usage, rendez-vous sans lieu comptés comme
+   ignorés, événements journée entière sans heure).
+7. **Carnet PDF** : rendu visuel (couverture, coupures de page, accents),
+   ouverture dans un lecteur externe via la feuille de partage.
+8. **Mise à jour intégrée** : le bandeau apparaît quand une release plus
+   récente existe, le tap télécharge l'APK, l'installation par-dessus
+   fonctionne (signature stable).
 
 ## Bugs corrigés par ce plan (première exécution)
 
