@@ -26,20 +26,23 @@ class CopilotSession : Session() {
 
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onCreate(owner: LifecycleOwner) {
-                // La voiture est là : l'Ange gardien prend son quart
-                DriveGuardService.start(carContext)
-            }
-
             override fun onDestroy(owner: LifecycleOwner) {
-                // Déconnexion de la voiture = on est garé : position mémorisée
-                val location = DriveGuardService.lastLocation ?: LocationProvider.lastKnown(carContext)
-                location?.let {
-                    ParkingMemory(carContext).saveParkingSpot(it.latitude, it.longitude, it.time)
+                // Déconnexion de la voiture = on est garé : position mémorisée.
+                // Meilleur effort — jamais rien qui puisse faire planter la session.
+                runCatching {
+                    val location = DriveGuardService.lastLocation ?: LocationProvider.lastKnown(carContext)
+                    location?.let {
+                        ParkingMemory(carContext).saveParkingSpot(it.latitude, it.longitude, it.time)
+                    }
                 }
-                DriveGuardService.stop(carContext)
             }
         })
+        // NOTE : on ne démarre PAS le service de conduite ici. Démarrer un
+        // foreground service depuis la session Android Auto viole les
+        // restrictions Android 12+ (démarrage en arrière-plan) et le type
+        // « location » exige une permission qu'Android Auto ne peut pas
+        // demander → crash/ANR. L'Ange gardien est démarré depuis le
+        // téléphone (bouton « Prendre la route »), contexte où c'est permis.
     }
 
     override fun onCreateScreen(intent: Intent): Screen = RoadTripScreen(carContext)

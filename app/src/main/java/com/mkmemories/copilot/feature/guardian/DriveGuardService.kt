@@ -87,7 +87,15 @@ class DriveGuardService : Service() {
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val settings = SettingsStore(this)
-        startInForeground()
+        // startForeground DOIT réussir dans les ~5 s, sinon le système tue le
+        // processus (ANR). Sur Android 14+ le type « location » lève une
+        // exception sans la permission : on s'arrête proprement au lieu de
+        // planter. Le service est censé être lancé depuis le téléphone, après
+        // que la permission a été accordée.
+        if (!startInForeground()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         running = true
         startedAt = System.currentTimeMillis()
         traveledMeters = 0.0
@@ -306,7 +314,8 @@ class DriveGuardService : Service() {
         ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun startInForeground() {
+    /** Promeut le service au premier plan. Retourne false sur échec (jamais d'exception). */
+    private fun startInForeground(): Boolean = try {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Mode conduite", NotificationManager.IMPORTANCE_LOW),
@@ -322,11 +331,16 @@ class DriveGuardService : Service() {
                 ),
             )
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // Type « location » seulement si la permission est là (Android 14+ l'exige) ;
+        // sinon service au premier plan classique, sans localisation.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && LocationProvider.hasPermission(this)) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        true
+    } catch (e: Exception) {
+        false
     }
 
     companion object {
@@ -349,12 +363,15 @@ class DriveGuardService : Service() {
         internal var current: DriveGuardService? = null
             private set
 
+        /** Démarre l'Ange gardien. À appeler depuis un contexte visible (Activity). */
         fun start(context: Context) {
-            ContextCompat.startForegroundService(context, Intent(context, DriveGuardService::class.java))
+            runCatching {
+                ContextCompat.startForegroundService(context, Intent(context, DriveGuardService::class.java))
+            }
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, DriveGuardService::class.java))
+            runCatching { context.stopService(Intent(context, DriveGuardService::class.java)) }
         }
     }
 }

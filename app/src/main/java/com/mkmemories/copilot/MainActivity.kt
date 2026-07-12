@@ -126,6 +126,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         briefingPlayer = BriefingPlayer(this)
+        // L'Ange gardien démarre depuis le téléphone (contexte visible = démarrage
+        // de foreground service autorisé), s'il est activé et la localisation
+        // accordée. Ainsi il tourne déjà quand on branche Android Auto.
+        if (SettingsStore(this).guardianEnabled && LocationProvider.hasPermission(this)) {
+            DriveGuardService.start(this)
+        }
         setContent {
             MKCopilotTheme {
                 var screen by rememberSaveable { mutableStateOf(AppScreen.HOME) }

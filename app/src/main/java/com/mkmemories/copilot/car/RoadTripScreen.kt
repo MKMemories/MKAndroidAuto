@@ -58,10 +58,28 @@ class RoadTripScreen(carContext: CarContext) : Screen(carContext) {
         })
     }
 
-    override fun onGetTemplate(): Template {
+    override fun onGetTemplate(): Template =
+        try {
+            buildTemplate()
+        } catch (e: Exception) {
+            // Jamais de crash/ANR sur l'écran voiture : repli minimal lisible
+            PlaceListMapTemplate.Builder()
+                .setTitle("MK Copilot")
+                .setHeaderAction(Action.APP_ICON)
+                .setItemList(
+                    ItemList.Builder()
+                        .setNoItemsMessage("Préparez votre voyage sur le téléphone, puis reconnectez-vous.")
+                        .build(),
+                )
+                .build()
+        }
+
+    private fun buildTemplate(): Template {
         val trip = TripRepository.currentTrip(carContext)
         val stops = trip.stopsFor(LocalDate.now())
-        val here = DriveGuardService.lastLocation ?: LocationProvider.lastKnown(carContext)
+        val here = runCatching {
+            DriveGuardService.lastLocation ?: LocationProvider.lastKnown(carContext)
+        }.getOrNull()
         // Les étapes restantes d'abord : ce sont elles qu'on veut au premier regard
         val ordered = stops.withIndex().sortedBy { it.value.visited }
 
