@@ -48,6 +48,13 @@ Le tout s'exécute d'un trait : `gradle testDebugUnitTest lintDebug assembleDebu
 | Géofencing d'arrivée | `ArrivalWatcherTest` | arrivée dans le rayon 150 m détectée une seule fois, étapes visitées ignorées, réarmement en sortie de rayon, 200 m = pas encore arrivé |
 | Open data radars | `RadarOpenDataRepositoryTest` | parseur tolérant (en-têtes repérés, lignes invalides ignorées), mapping vitesses françaises (110+ autoroute, 80+ route, sinon ville), résolution d'URL via l'API, cache 30 j (téléchargement, fraîcheur, erreur réseau → anciennes données préservées) |
 | IA enrichissement | `BriefingEnricherTest` | sans clé → texte local tel quel (priorité au moteur local), prompt avec consignes voix et anti-hallucination |
+| Aides de conduite | `DriveAlertsTest` | fatigue : 2 h jour / 1 h 30 nuit, rappel horaire sans spam, durées énoncées ; verglas/brouillard : combinaisons, pas d'alarmisme l'après-midi |
+| Suivi & boîte noire | `TrackingAndBlackBoxTest` | premier SMS immédiat puis cadence 30 min, message avec position/heure/étape ; fenêtre glissante 60 s, JSON d'incident complet |
+| Données externes | `ExternalDataTest` | météo de route (première étape dégradée annoncée, étapes visitées ignorées, pannes silencieuses), carburants (moins cher retenu, annonce française), geosearch Wikipédia |
+| Assistants | `AssistantsTest` | lecture SMS tronquée proprement, réponse auto avec ETA + anti-tempête par contact, cadence du guide (10 min / 5 km / jamais deux fois le même site), commandes vocales (accents aplatis, hors-sujet = aucune action) |
+| Outils de planification | `PlanningToolsTest` | optimiseur (ordre géographique rétabli, jamais plus long, ancres horaires immuables), départ intelligent (conseil, retard, silence sans rendez-vous) |
+| Import de fichiers | `TripFileParserTest` | KML (CDATA, ordre lng/lat), GPX (attributs), JSON complet restauré, fichier quelconque toléré |
+| Journal + registre | `TripJournalTest` | accumulation persistante, micro-trajets ignorés, corruption tolérée ; défauts du registre (opt-in pour SMS/voix spontanée), bascule persistante |
 | Briefing météo | `WeatherBriefingGeneratorTest`, `WeatherBriefingIntegrationTest` | seuils pluie (40 %) et vent (50 km/h), arrondis, 19 codes WMO, erreurs serveur → exception (jamais de briefing mensonger) |
 | SOS / Ange gardien | `SosManagerTest`, `CrashDetectorTest` | 30 ticks puis SMS à tous les contacts, annulation → zéro SMS, anti-doublon, lien Maps, seuil ~6 g jamais atteint en conduite normale |
 | J'arrive bien | `ArrivalNotifierTest` | horodatage français, minutes sur 2 chiffres, tous les proches notifiés |

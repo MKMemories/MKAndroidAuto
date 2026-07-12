@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.mkmemories.copilot.feature.settings.Feature
 import com.mkmemories.copilot.feature.settings.SettingsStore
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
 import com.mkmemories.copilot.ui.theme.BrandEmber
@@ -57,6 +59,9 @@ import com.mkmemories.copilot.ui.theme.BrandIce
 import com.mkmemories.copilot.ui.theme.BrandMist
 import com.mkmemories.copilot.ui.theme.BrandNight
 import com.mkmemories.copilot.ui.theme.BrandSurface
+
+// Fonctions dont l'activation déclenche la demande de permission d'envoi SMS
+private val smsFeatures = setOf(Feature.AUTO_REPLY, Feature.TRIP_TRACKING)
 
 /**
  * Réglages : le poste de commandement de l'Ange gardien (contacts SOS,
@@ -83,6 +88,20 @@ fun SettingsScreen(onBack: () -> Unit) {
                 "Sans la permission SMS, le SOS et « J'arrive bien » ne pourront pas envoyer de messages",
                 Toast.LENGTH_LONG,
             ).show()
+        }
+    }
+    val receiveSmsPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(context, "Permission SMS refusée : lecture/réponse automatique inactives", Toast.LENGTH_LONG).show()
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(context, "Permission micro refusée : commandes vocales inactives", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -181,6 +200,42 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(14.dp))
 
+            // --- Toutes les fonctionnalités -----------------------------------
+            SettingsCard(title = "Fonctionnalités") {
+                Text(
+                    "Chaque fonction s'active ou se coupe ici. Celles qui envoient des SMS, " +
+                        "lisent vos messages ou parlent spontanément sont désactivées par défaut.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BrandMist,
+                )
+                Spacer(Modifier.height(6.dp))
+                Feature.entries.forEach { feature ->
+                    var enabled by remember { mutableStateOf(store.isEnabled(feature)) }
+                    Spacer(Modifier.height(8.dp))
+                    SwitchRow(
+                        title = feature.title,
+                        subtitle = feature.description,
+                        checked = enabled,
+                        onChange = {
+                            enabled = it
+                            store.setEnabled(feature, it)
+                            when {
+                                it && feature in smsFeatures ->
+                                    smsPermission.launch(Manifest.permission.SEND_SMS)
+                                it && feature == Feature.MESSAGE_READER ->
+                                    receiveSmsPermission.launch(Manifest.permission.RECEIVE_SMS)
+                                it && feature == Feature.AUTO_REPLY ->
+                                    receiveSmsPermission.launch(Manifest.permission.RECEIVE_SMS)
+                                it && feature == Feature.VOICE_COMMANDS ->
+                                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
             // --- IA -----------------------------------------------------------
             SettingsCard(title = "IA copilote") {
                 Text(
@@ -201,6 +256,58 @@ fun SettingsScreen(onBack: () -> Unit) {
                     visualTransformation = PasswordVisualTransformation(),
                     colors = settingsFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // --- Données locales (journal + boîte noire) -----------------------
+            SettingsCard(title = "Données locales") {
+                val journal = remember { com.mkmemories.copilot.feature.journal.TripJournal(context) }
+                val trips = remember { journal.all() }
+                Text(
+                    if (trips.isEmpty()) "Journal de bord : aucun trajet enregistré pour l'instant."
+                    else "Journal de bord : ${trips.size} trajet${if (trips.size > 1) "s" else ""}, " +
+                        "${"%.0f".format(journal.totalKm())} km au total.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                )
+                val incidents = remember { com.mkmemories.copilot.feature.blackbox.BlackBox.incidents(context) }
+                if (incidents.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Partager le dernier incident de la boîte noire (${incidents.size} enregistré${if (incidents.size > 1) "s" else ""})",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = BrandGold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                try {
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context, "${context.packageName}.fileprovider", incidents.first(),
+                                    )
+                                    context.startActivity(
+                                        android.content.Intent.createChooser(
+                                            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "application/json"
+                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            },
+                                            "Incident boîte noire",
+                                        ),
+                                    )
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Partage impossible", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            .padding(vertical = 6.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Tout reste sur votre téléphone : rien n'est envoyé à un serveur.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BrandMist.copy(alpha = 0.7f),
                 )
             }
 

@@ -42,6 +42,13 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_ARRIVAL_SMS, false)
         set(value) = prefs.edit { putBoolean(KEY_ARRIVAL_SMS, value) }
 
+    /** Interrupteur d'une fonctionnalité du registre [Feature]. */
+    fun isEnabled(feature: Feature): Boolean =
+        prefs.getBoolean("feature_${feature.name}", feature.defaultEnabled)
+
+    fun setEnabled(feature: Feature, enabled: Boolean) =
+        prefs.edit { putBoolean("feature_${feature.name}", enabled) }
+
     fun addEmergencyContact(number: String) {
         val cleaned = number.trim()
         if (cleaned.isNotBlank() && cleaned !in emergencyContacts) {

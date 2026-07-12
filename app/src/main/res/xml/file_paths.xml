@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="pdf" path="pdf/" />
+    <cache-path name="share" path="share/" />
+    <files-path name="blackbox" path="blackbox/" />
 </paths>

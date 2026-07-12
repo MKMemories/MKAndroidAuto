@@ -68,12 +68,18 @@ import androidx.core.content.FileProvider
 import com.mkmemories.copilot.feature.calendar.CalendarImporter
 import com.mkmemories.copilot.feature.places.PlaceSearch
 import com.mkmemories.copilot.feature.places.PlaceSuggestion
+import com.mkmemories.copilot.feature.location.LocationProvider
+import com.mkmemories.copilot.feature.roadtrip.DepartureAdvisor
+import com.mkmemories.copilot.feature.roadtrip.RouteOptimizer
 import com.mkmemories.copilot.feature.roadtrip.Trip
 import com.mkmemories.copilot.feature.roadtrip.TripDay
+import com.mkmemories.copilot.feature.roadtrip.TripFileParser
 import com.mkmemories.copilot.feature.roadtrip.TripRepository
 import com.mkmemories.copilot.feature.roadtrip.TripStop
 import com.mkmemories.copilot.feature.roadtrip.TripStore
 import com.mkmemories.copilot.feature.roadtrip.frenchLabel
+import com.mkmemories.copilot.feature.settings.Feature
+import com.mkmemories.copilot.feature.settings.SettingsStore
 import com.mkmemories.copilot.feature.roadtrip.pdf.TripPdfExporter
 import com.mkmemories.copilot.feature.roadtrip.timeLabel
 import com.mkmemories.copilot.feature.roadtrip.withMovedStop
@@ -110,12 +116,64 @@ fun PlannerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { TripStore(context) }
+    val settings = remember { SettingsStore(context) }
     var trip by remember { mutableStateOf(TripRepository.currentTrip(context)) }
     var exporting by remember { mutableStateOf(false) }
 
     fun update(newTrip: Trip) {
         trip = newTrip
         store.save(newTrip)
+    }
+
+    // Import KML / GPX / JSON MK Copilot
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val content = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+            }.getOrNull().orEmpty()
+            val fullTrip = TripFileParser.parseFullTrip(content)
+            if (fullTrip != null) {
+                update(fullTrip)
+                Toast.makeText(context, "Voyage « ${fullTrip.name} » importé", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val places = TripFileParser.parse(content)
+            if (places.isEmpty()) {
+                Toast.makeText(context, "Aucune étape exploitable dans ce fichier", Toast.LENGTH_LONG).show()
+            } else {
+                var current = trip
+                val date = LocalDate.now()
+                places.forEach { place ->
+                    current = current.withStop(date, TripStop(place.name, place.latitude, place.longitude))
+                }
+                update(current)
+                Toast.makeText(context, "${places.size} étapes importées pour aujourd'hui", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun shareTrip() {
+        try {
+            val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+            val file = java.io.File(dir, "voyage-mk-copilot.json")
+            file.writeText(TripStore.toJson(trip))
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            context.startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "application/json"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                    "Partager le voyage",
+                ),
+            )
+        } catch (e: Exception) {
+            Toast.makeText(context, "Partage impossible : ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     BackHandler(onBack = onBack)
@@ -172,13 +230,78 @@ fun PlannerScreen(onBack: () -> Unit) {
                 )
             }
 
+            if (settings.isEnabled(Feature.TRIP_IMPORT_SHARE)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                importLauncher.launch(arrayOf("*/*"))
+                            }
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, tint = BrandIce, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text("Importer (KML, GPX, JSON)", style = MaterialTheme.typography.labelLarge, color = BrandIce)
+                    }
+                    Spacer(Modifier.size(8.dp))
+                    if (trip.days.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { shareTrip() }
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = null, tint = BrandIce, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text("Partager", style = MaterialTheme.typography.labelLarge, color = BrandIce)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
             trip.days.sortedBy { it.date }.forEach { day ->
                 DayCard(
                     day = day,
+                    optimizerEnabled = settings.isEnabled(Feature.ROUTE_OPTIMIZER),
+                    photosEnabled = settings.isEnabled(Feature.PHOTO_BOOK),
+                    departureAdvice = if (settings.isEnabled(Feature.SMART_DEPARTURE) && day.date == LocalDate.now()) {
+                        val (lat, lng) = LocationProvider.coordinatesOrFallback(context)
+                        DepartureAdvisor.advice(lat, lng, day.stops, LocalTime.now())
+                    } else {
+                        null
+                    },
                     onRemove = { stop -> update(trip.withoutStop(day.date, stop)) },
                     onMove = { index, delta -> update(trip.withMovedStop(day.date, index, delta)) },
                     onSetTime = { index, newTime ->
                         update(trip.withUpdatedStop(day.date, index) { it.copy(time = newTime) })
+                    },
+                    onSetPhoto = { index, path ->
+                        update(trip.withUpdatedStop(day.date, index) { it.copy(photoPath = path) })
+                    },
+                    onOptimize = {
+                        val optimized = RouteOptimizer.optimize(day.stops)
+                        update(trip.copy(days = trip.days.map { if (it.date == day.date) it.copy(stops = optimized) else it }))
+                        Toast.makeText(context, "Ordre optimisé", Toast.LENGTH_SHORT).show()
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            if (settings.isEnabled(Feature.DETOURS) && trip.stopsFor(LocalDate.now()).isNotEmpty()) {
+                DetoursSection(
+                    todayStops = trip.stopsFor(LocalDate.now()),
+                    onAdd = { site ->
+                        update(
+                            trip.withStop(
+                                LocalDate.now(),
+                                TripStop(site.title, site.latitude, site.longitude, locality = site.title),
+                            ),
+                        )
+                        Toast.makeText(context, "Détour ajouté : ${site.title}", Toast.LENGTH_SHORT).show()
                     },
                 )
                 Spacer(Modifier.height(12.dp))
@@ -511,11 +634,38 @@ private fun AddStopSection(
 @Composable
 private fun DayCard(
     day: TripDay,
+    optimizerEnabled: Boolean,
+    photosEnabled: Boolean,
+    departureAdvice: String?,
     onRemove: (TripStop) -> Unit,
     onMove: (Int, Int) -> Unit,
     onSetTime: (Int, LocalTime?) -> Unit,
+    onSetPhoto: (Int, String?) -> Unit,
+    onOptimize: () -> Unit,
 ) {
+    val context = LocalContext.current
     var editingTimeFor by remember { mutableStateOf<Int?>(null) }
+    var photoFor by remember { mutableStateOf<Int?>(null) }
+
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val index = photoFor
+        photoFor = null
+        if (uri == null || index == null) return@rememberLauncherForActivityResult
+        // Copie locale : la photo reste disponible pour le PDF même si la galerie bouge
+        val path = runCatching {
+            val dir = java.io.File(context.filesDir, "photos").apply { mkdirs() }
+            val file = java.io.File(dir, "etape-${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                file.outputStream().use { input.copyTo(it) }
+            }
+            file.absolutePath
+        }.getOrNull()
+        if (path != null) onSetPhoto(index, path)
+        else Toast.makeText(context, "Photo inaccessible", Toast.LENGTH_SHORT).show()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -525,7 +675,28 @@ private fun DayCard(
             .padding(16.dp)
             .animateContentSize(),
     ) {
-        Text(day.date.frenchLabel(), style = MaterialTheme.typography.titleMedium, color = BrandGold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                day.date.frenchLabel(),
+                style = MaterialTheme.typography.titleMedium,
+                color = BrandGold,
+                modifier = Modifier.weight(1f),
+            )
+            if (optimizerEnabled && day.stops.size >= 3) {
+                Text(
+                    "Ordre optimal",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = BrandAuroraTeal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onOptimize)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+        }
+        departureAdvice?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = BrandIce)
+        }
         Spacer(Modifier.height(6.dp))
         day.stops.forEachIndexed { index, stop ->
             Row(
@@ -543,9 +714,30 @@ private fun DayCard(
                 Spacer(Modifier.size(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(stop.name, style = MaterialTheme.typography.titleMedium, color = Color.White)
-                    val sub = listOfNotNull(stop.timeLabel(), stop.locality).joinToString(" · ")
+                    val sub = listOfNotNull(
+                        stop.timeLabel(),
+                        stop.locality,
+                        if (stop.photoPath != null) "📷" else null,
+                    ).joinToString(" · ")
                     if (sub.isNotBlank()) {
                         Text(sub, style = MaterialTheme.typography.bodyMedium, color = BrandMist)
+                    }
+                }
+                if (photosEnabled) {
+                    IconButton(onClick = {
+                        photoFor = index
+                        photoPicker.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    }) {
+                        Text(
+                            "📷",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = if (stop.photoPath != null) BrandAuroraTeal else BrandMist.copy(alpha = 0.5f),
+                            ),
+                        )
                     }
                 }
                 IconButton(onClick = { editingTimeFor = index }) {
@@ -596,6 +788,91 @@ private fun DayCard(
             },
             text = { TimePicker(state = timeState) },
         )
+    }
+}
+
+/** « Détours qui valent le coup » : sites Wikipédia autour du milieu de la journée. */
+@Composable
+private fun DetoursSection(
+    todayStops: List<TripStop>,
+    onAdd: (com.mkmemories.copilot.feature.places.NearbySite) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var sites by remember { mutableStateOf<List<com.mkmemories.copilot.feature.places.NearbySite>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var searched by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(BrandSurface.copy(alpha = 0.88f))
+            .border(1.dp, BrandGold.copy(alpha = 0.22f), RoundedCornerShape(20.dp))
+            .padding(16.dp)
+            .animateContentSize(),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Détours qui valent le coup", style = MaterialTheme.typography.titleLarge, color = Color.White)
+                Text(
+                    "Sites remarquables proches de votre journée (Wikipédia)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BrandMist,
+                )
+            }
+            if (searching) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = BrandGold, strokeWidth = 2.dp)
+            } else {
+                Text(
+                    "Découvrir",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = BrandGold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            searching = true
+                            scope.launch {
+                                // Autour du barycentre de la journée : là où on passera
+                                val lat = todayStops.map { it.latitude }.average()
+                                val lng = todayStops.map { it.longitude }.average()
+                                val known = todayStops.map { it.name.lowercase() }.toSet()
+                                sites = com.mkmemories.copilot.feature.places.NearbyWiki
+                                    .around(lat, lng, radiusMeters = 10_000, limit = 6)
+                                    .filter { it.title.lowercase() !in known }
+                                searching = false
+                                searched = true
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+        }
+        if (searched && sites.isEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text("Rien de notable dans le secteur — la route est à vous.", style = MaterialTheme.typography.bodyMedium, color = BrandMist)
+        }
+        sites.forEach { site ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onAdd(site) }
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Place, contentDescription = null, tint = BrandGold, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(site.title, style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text(
+                        "à ${(site.distanceMeters / 1000).toInt().coerceAtLeast(1)} km du cœur de votre journée",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = BrandMist,
+                    )
+                }
+                Icon(Icons.Rounded.Add, contentDescription = "Ajouter", tint = BrandAuroraTeal)
+            }
+        }
     }
 }
 

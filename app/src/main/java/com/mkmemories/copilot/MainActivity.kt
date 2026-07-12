@@ -2,8 +2,10 @@ package com.mkmemories.copilot
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -76,12 +78,22 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.mkmemories.copilot.feature.ai.BriefingEnricher
 import com.mkmemories.copilot.feature.briefing.BriefingPlayer
 import com.mkmemories.copilot.feature.briefing.WeatherBriefingGenerator
+import com.mkmemories.copilot.feature.guardian.ArrivalNotifier
 import com.mkmemories.copilot.feature.guardian.DriveGuardService
+import com.mkmemories.copilot.feature.guardian.ParkingMemory
+import com.mkmemories.copilot.feature.guardian.ParkingReminderReceiver
 import com.mkmemories.copilot.feature.location.LocationProvider
+import com.mkmemories.copilot.feature.settings.Feature
+import com.mkmemories.copilot.feature.settings.SettingsStore
+import com.mkmemories.copilot.feature.voice.VoiceCommand
+import com.mkmemories.copilot.feature.voice.VoiceCommands
 import com.mkmemories.copilot.feature.roadtrip.DayBriefing
 import com.mkmemories.copilot.ui.settings.SettingsScreen
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
@@ -146,17 +158,17 @@ private enum class AppScreen { HOME, PLANNER, SETTINGS }
 // Écran d'accueil
 // ---------------------------------------------------------------------------
 
-private data class Feature(val image: Int, val title: String, val subtitle: String)
+private data class Pillar(val image: Int, val title: String, val subtitle: String)
 
-private val Features = listOf(
-    Feature(R.drawable.feat_roadtrip, "Road trip", "Vos étapes du jour, guidées par Maps"),
-    Feature(R.drawable.feat_briefing, "Briefing du jour", "Météo et conseils, lus en voiture"),
-    Feature(R.drawable.feat_guardian, "Ange gardien", "Détection d'accident, SOS 30 s"),
-    Feature(R.drawable.feat_sos, "SOS", "SMS d'urgence avec position GPS"),
-    Feature(R.drawable.feat_arrival, "J'arrive bien", "Vos proches prévenus à l'arrivée"),
-    Feature(R.drawable.feat_parking, "Parking", "Votre voiture, toujours retrouvée"),
-    Feature(R.drawable.feat_danger, "Zones de danger", "Alertes légales, audio, mains libres"),
-    Feature(R.drawable.feat_ai, "IA copilote", "Briefings malins, 100 % gratuits"),
+private val Pillars = listOf(
+    Pillar(R.drawable.feat_roadtrip, "Road trip", "Vos étapes du jour, guidées par Maps"),
+    Pillar(R.drawable.feat_briefing, "Briefing du jour", "Météo et conseils, lus en voiture"),
+    Pillar(R.drawable.feat_guardian, "Ange gardien", "Détection d'accident, SOS 30 s"),
+    Pillar(R.drawable.feat_sos, "SOS", "SMS d'urgence avec position GPS"),
+    Pillar(R.drawable.feat_arrival, "J'arrive bien", "Vos proches prévenus à l'arrivée"),
+    Pillar(R.drawable.feat_parking, "Parking", "Votre voiture, toujours retrouvée"),
+    Pillar(R.drawable.feat_danger, "Zones de danger", "Alertes légales, audio, mains libres"),
+    Pillar(R.drawable.feat_ai, "IA copilote", "Briefings malins, 100 % gratuits"),
 )
 
 @Composable
@@ -166,6 +178,7 @@ private fun HomeScreen(
     onOpenPlanner: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val homeContext = LocalContext.current
     val scroll = rememberScrollState()
     var appeared by rememberSaveable { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -235,11 +248,11 @@ private fun HomeScreen(
             }
             Spacer(Modifier.height(12.dp))
 
-            Features.chunked(2).forEachIndexed { rowIndex, pair ->
+            Pillars.chunked(2).forEachIndexed { rowIndex, pair ->
                 Reveal(appeared, index = 4 + rowIndex) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { feature ->
-                            FeatureCard(feature, modifier = Modifier.weight(1f))
+                        pair.forEach { pillar ->
+                            FeatureCard(pillar, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -257,6 +270,17 @@ private fun HomeScreen(
                 )
             }
             Spacer(Modifier.height(32.dp))
+        }
+
+        // Micro : commandes vocales (si la fonction est active)
+        if (remember { SettingsStore(homeContext).isEnabled(Feature.VOICE_COMMANDS) }) {
+            VoiceFab(
+                trip = trip,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(20.dp),
+            )
         }
 
         // Réglages, toujours accessible en haut à droite
@@ -516,7 +540,169 @@ private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit) {
             }
 
             DriveModeRow()
+            ParkingRow()
         }
+    }
+}
+
+/** « Ma voiture » : guidage piéton vers la place mémorisée + minuteur zone bleue. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ParkingRow() {
+    val context = LocalContext.current
+    val settings = remember { SettingsStore(context) }
+    if (!settings.isEnabled(Feature.PARKING_TOOLS)) return
+    val spot = remember { ParkingMemory(context).lastParkingSpot() } ?: return
+    var showTimer by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable {
+                try {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("geo:${spot.latitude},${spot.longitude}?q=${spot.latitude},${spot.longitude}(Ma voiture)"),
+                        ),
+                    )
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context, "Aucune app de cartes disponible", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Place, contentDescription = null, tint = BrandGold, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.size(10.dp))
+        Text(
+            "Ma voiture — retrouver la place",
+            style = MaterialTheme.typography.labelLarge,
+            color = BrandGold,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "⏱ Zone bleue",
+            style = MaterialTheme.typography.labelLarge,
+            color = BrandIce,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable { showTimer = true }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+
+    if (showTimer) {
+        val minutes = listOf(30, 60, 90, 120)
+        AlertDialog(
+            onDismissRequest = { showTimer = false },
+            confirmButton = {},
+            title = { Text("Rappel stationnement") },
+            text = {
+                Column {
+                    Text("Une seule notification, à l'échéance choisie :")
+                    minutes.forEach { m ->
+                        Text(
+                            if (m < 60) "$m minutes" else "${m / 60} h${if (m % 60 > 0) " ${m % 60}" else ""}",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    // 10 min d'avance pour avoir le temps de revenir
+                                    ParkingReminderReceiver.schedule(context, (m - 10).coerceAtLeast(5))
+                                    showTimer = false
+                                    Toast.makeText(context, "Rappel programmé", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(10.dp),
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** Micro : commandes vocales via la reconnaissance système (aucun serveur MK). */
+@Composable
+private fun VoiceFab(trip: Trip, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+
+    fun execute(command: VoiceCommand?) {
+        when (command) {
+            VoiceCommand.NEXT_STOP -> {
+                val next = trip.stopsFor(LocalDate.now()).firstOrNull { !it.visited }
+                if (next == null) {
+                    Toast.makeText(context, "Aucune étape restante aujourd'hui", Toast.LENGTH_SHORT).show()
+                } else {
+                    try {
+                        NavigationLauncher.navigateFromPhone(context, next)
+                    } catch (e: ActivityNotFoundException) {
+                        Toast.makeText(context, "Aucune app de navigation", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            VoiceCommand.WHERE_IS_CAR -> {
+                val spot = ParkingMemory(context).lastParkingSpot()
+                if (spot == null) {
+                    Toast.makeText(context, "Aucune place mémorisée", Toast.LENGTH_SHORT).show()
+                } else {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("geo:${spot.latitude},${spot.longitude}?q=${spot.latitude},${spot.longitude}(Ma voiture)")),
+                    )
+                }
+            }
+            VoiceCommand.NOTIFY_ARRIVAL -> {
+                val settings = SettingsStore(context)
+                val allowed = ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) ==
+                    PackageManager.PERMISSION_GRANTED
+                when {
+                    settings.arrivalRecipients.isEmpty() ->
+                        Toast.makeText(context, "Ajoutez des proches dans les Réglages", Toast.LENGTH_LONG).show()
+                    !allowed ->
+                        Toast.makeText(context, "Permission SMS manquante (Réglages)", Toast.LENGTH_LONG).show()
+                    else -> {
+                        ArrivalNotifier.notifyArrival("bon port", settings.arrivalRecipients)
+                        Toast.makeText(context, "Vos proches sont prévenus 🚗", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            VoiceCommand.PLAY_BRIEFING ->
+                Toast.makeText(context, "Touchez « Écouter le briefing » sur la carte du haut", Toast.LENGTH_SHORT).show()
+            null -> Toast.makeText(context, "Commande non comprise", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val speech = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val heard = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (heard != null) execute(VoiceCommands.match(heard))
+    }
+
+    Box(
+        modifier = modifier
+            .size(58.dp)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(BrandIce, BrandAuroraViolet)))
+            .clickable {
+                try {
+                    speech.launch(
+                        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "« Prochaine étape », « Où est ma voiture »…")
+                        },
+                    )
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context, "Reconnaissance vocale indisponible", Toast.LENGTH_SHORT).show()
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("🎙", style = MaterialTheme.typography.titleLarge)
     }
 }
 
@@ -625,7 +811,7 @@ private fun StopRow(index: Int, stop: TripStop, onClick: () -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun FeatureCard(feature: Feature, modifier: Modifier = Modifier) {
+private fun FeatureCard(feature: Pillar, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(

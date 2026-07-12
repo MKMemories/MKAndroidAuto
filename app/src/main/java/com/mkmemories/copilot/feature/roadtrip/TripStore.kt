@@ -47,7 +47,8 @@ class TripStore(context: Context) {
                             .put("lng", stop.longitude)
                             .put("visited", stop.visited)
                             .putOpt("locality", stop.locality)
-                            .putOpt("time", stop.time?.toString()),
+                            .putOpt("time", stop.time?.toString())
+                            .putOpt("photo", stop.photoPath),
                     )
                 }
                 days.put(JSONObject().put("date", day.date.toString()).put("stops", stops))
@@ -74,6 +75,7 @@ class TripStore(context: Context) {
                             locality = stopJson.optString("locality").takeIf { it.isNotBlank() },
                             time = stopJson.optString("time").takeIf { it.isNotBlank() }
                                 ?.let { LocalTime.parse(it) },
+                            photoPath = stopJson.optString("photo").takeIf { it.isNotBlank() },
                         ),
                     )
                 }

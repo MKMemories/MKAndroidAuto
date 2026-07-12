@@ -31,4 +31,6 @@ data class TripStop(
     val locality: String? = null,
     /** Heure de rendez-vous, optionnelle (visite guidée, ferry, restaurant…). */
     val time: LocalTime? = null,
+    /** Photo souvenir attachée (chemin local) — le carnet PDF l'embarque. */
+    val photoPath: String? = null,
 )

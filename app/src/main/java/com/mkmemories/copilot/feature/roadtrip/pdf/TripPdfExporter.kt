@@ -27,6 +27,7 @@ internal data class PdfStopBlock(
     val title: String,
     val subtitle: String?,
     val description: String?,
+    val photoPath: String? = null,
 )
 
 internal data class PdfSection(val dateLabel: String, val stops: List<PdfStopBlock>)
@@ -49,6 +50,7 @@ internal object TripPdfLayout {
                             .joinToString(" — ")
                             .takeIf { it.isNotBlank() },
                         description = descriptions[stop.locality ?: stop.name],
+                        photoPath = stop.photoPath,
                     )
                 },
             )
@@ -84,6 +86,23 @@ object TripPdfExporter {
     private const val PAGE_W = 595 // A4 en points
     private const val PAGE_H = 842
     private const val MARGIN = 56f
+    private const val PHOTO_WIDTH = 220f
+
+    /** Photo décodée à taille raisonnable ; null si le fichier a disparu. */
+    private fun decodePhoto(path: String): android.graphics.Bitmap? = try {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0) null
+        else {
+            val sample = (bounds.outWidth / 800).coerceAtLeast(1)
+            android.graphics.BitmapFactory.decodeFile(
+                path,
+                android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+            )
+        }
+    } catch (e: Exception) {
+        null
+    }
 
     /**
      * Génère le carnet et le dépose dans le cache de l'app (à partager via
@@ -195,7 +214,9 @@ object TripPdfExporter {
 
             section.stops.forEach { stop ->
                 val descLayout = stop.description?.let { staticLayout(it, 10.5f, INK_SOFT, (PAGE_W - 2 * MARGIN - 40).toInt()) }
-                val blockHeight = 40f + (descLayout?.height?.toFloat() ?: 0f)
+                val photo = stop.photoPath?.let { decodePhoto(it) }
+                val photoHeight = photo?.let { PHOTO_WIDTH * it.height / it.width + 10f } ?: 0f
+                val blockHeight = 40f + (descLayout?.height?.toFloat() ?: 0f) + photoHeight
                 ensureRoom(blockHeight)
 
                 // Pastille numérotée or
@@ -215,6 +236,14 @@ object TripPdfExporter {
                     innerY += 10f
                     canvas.withTranslation(textX, innerY) { layout.draw(this) }
                     innerY += layout.height
+                }
+                photo?.let { bitmap ->
+                    innerY += 10f
+                    val h = PHOTO_WIDTH * bitmap.height / bitmap.width
+                    val dest = android.graphics.RectF(textX, innerY, textX + PHOTO_WIDTH, innerY + h)
+                    canvas.drawBitmap(bitmap, null, dest, Paint(Paint.FILTER_BITMAP_FLAG))
+                    innerY += h
+                    bitmap.recycle()
                 }
                 y = maxOf(y + 28f, innerY + 22f)
             }
