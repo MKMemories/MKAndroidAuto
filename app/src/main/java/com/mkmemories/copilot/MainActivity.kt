@@ -94,6 +94,7 @@ import com.mkmemories.copilot.feature.settings.Feature
 import com.mkmemories.copilot.feature.settings.SettingsStore
 import com.mkmemories.copilot.feature.voice.VoiceCommand
 import com.mkmemories.copilot.feature.voice.VoiceCommands
+import com.mkmemories.copilot.ui.parking.ParkingScreen
 import com.mkmemories.copilot.feature.roadtrip.DayBriefing
 import com.mkmemories.copilot.ui.settings.SettingsScreen
 import com.mkmemories.copilot.feature.roadtrip.NavigationLauncher
@@ -143,10 +144,12 @@ class MainActivity : ComponentActivity() {
                             onPlayBriefing = { text -> briefingPlayer.speak(text) },
                             onOpenPlanner = { screen = AppScreen.PLANNER },
                             onOpenSettings = { screen = AppScreen.SETTINGS },
+                            onOpenParking = { screen = AppScreen.PARKING },
                         )
                     }
                     AppScreen.PLANNER -> PlannerScreen(onBack = { screen = AppScreen.HOME })
                     AppScreen.SETTINGS -> SettingsScreen(onBack = { screen = AppScreen.HOME })
+                    AppScreen.PARKING -> ParkingScreen(onBack = { screen = AppScreen.HOME })
                 }
             }
         }
@@ -158,7 +161,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppScreen { HOME, PLANNER, SETTINGS }
+private enum class AppScreen { HOME, PLANNER, SETTINGS, PARKING }
 
 // ---------------------------------------------------------------------------
 // Écran d'accueil
@@ -183,6 +186,7 @@ private fun HomeScreen(
     onPlayBriefing: (String) -> Unit,
     onOpenPlanner: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenParking: () -> Unit,
 ) {
     val homeContext = LocalContext.current
     val scroll = rememberScrollState()
@@ -242,7 +246,7 @@ private fun HomeScreen(
             Reveal(appeared, index = 1) { BriefingCard(trip, onPlayBriefing) }
 
             Spacer(Modifier.height(16.dp))
-            Reveal(appeared, index = 2) { RoadTripCard(trip, onOpenPlanner) }
+            Reveal(appeared, index = 2) { RoadTripCard(trip, onOpenPlanner, onOpenParking) }
 
             Spacer(Modifier.height(28.dp))
             Reveal(appeared, index = 3) {
@@ -470,7 +474,7 @@ private fun BriefingCard(trip: Trip, onPlayBriefing: (String) -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit) {
+private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit, onOpenParking: () -> Unit) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val stops = remember(trip) { trip.stopsFor(LocalDate.now()) }
@@ -546,85 +550,31 @@ private fun RoadTripCard(trip: Trip, onOpenPlanner: () -> Unit) {
             }
 
             DriveModeRow()
-            ParkingRow()
+            ParkingRow(onOpenParking)
         }
     }
 }
 
-/** « Ma voiture » : guidage piéton vers la place mémorisée + minuteur zone bleue. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Entrée « Ma voiture » — toujours visible ; ouvre l'écran parking dédié. */
 @Composable
-private fun ParkingRow() {
+private fun ParkingRow(onOpen: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
     if (!settings.isEnabled(Feature.PARKING_TOOLS)) return
-    val spot = remember { ParkingMemory(context).lastParkingSpot() } ?: return
-    var showTimer by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
-            .clickable {
-                try {
-                    context.startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("geo:${spot.latitude},${spot.longitude}?q=${spot.latitude},${spot.longitude}(Ma voiture)"),
-                        ),
-                    )
-                } catch (e: ActivityNotFoundException) {
-                    Toast.makeText(context, "Aucune app de cartes disponible", Toast.LENGTH_SHORT).show()
-                }
-            }
+            .clickable(onClick = onOpen)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Place, contentDescription = null, tint = BrandGold, modifier = Modifier.size(18.dp))
         Spacer(Modifier.size(10.dp))
         Text(
-            "Ma voiture — retrouver la place",
+            "Ma voiture — enregistrer / retrouver la place",
             style = MaterialTheme.typography.labelLarge,
             color = BrandGold,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            "⏱ Zone bleue",
-            style = MaterialTheme.typography.labelLarge,
-            color = BrandIce,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable { showTimer = true }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-    }
-
-    if (showTimer) {
-        val minutes = listOf(30, 60, 90, 120)
-        AlertDialog(
-            onDismissRequest = { showTimer = false },
-            confirmButton = {},
-            title = { Text("Rappel stationnement") },
-            text = {
-                Column {
-                    Text("Une seule notification, à l'échéance choisie :")
-                    minutes.forEach { m ->
-                        Text(
-                            if (m < 60) "$m minutes" else "${m / 60} h${if (m % 60 > 0) " ${m % 60}" else ""}",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    // 10 min d'avance pour avoir le temps de revenir
-                                    ParkingReminderReceiver.schedule(context, (m - 10).coerceAtLeast(5))
-                                    showTimer = false
-                                    Toast.makeText(context, "Rappel programmé", Toast.LENGTH_SHORT).show()
-                                }
-                                .padding(10.dp),
-                        )
-                    }
-                }
-            },
         )
     }
 }

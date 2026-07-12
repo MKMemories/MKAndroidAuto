@@ -32,10 +32,26 @@ class ParkingMemory(context: Context) {
         )
     }
 
+    /** Note libre (étage, place, repère visuel…). */
+    var note: String?
+        get() = prefs.getString(KEY_NOTE, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit { putString(KEY_NOTE, value?.trim()) }
+
+    /** Oublie la place enregistrée (et sa note). */
+    fun clear() {
+        prefs.edit {
+            remove(KEY_LAT)
+            remove(KEY_LNG)
+            remove(KEY_TIME)
+            remove(KEY_NOTE)
+        }
+    }
+
     private companion object {
         const val KEY_LAT = "lat"
         const val KEY_LNG = "lng"
         const val KEY_TIME = "time"
+        const val KEY_NOTE = "note"
     }
 }
 
