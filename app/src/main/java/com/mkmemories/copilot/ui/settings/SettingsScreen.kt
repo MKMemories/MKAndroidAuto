@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,9 +52,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.mkmemories.copilot.BuildConfig
 import com.mkmemories.copilot.feature.diag.AppLog
 import com.mkmemories.copilot.feature.settings.Feature
 import com.mkmemories.copilot.feature.settings.SettingsStore
+import com.mkmemories.copilot.feature.update.UpdateChecker
+import kotlinx.coroutines.launch
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
 import com.mkmemories.copilot.ui.theme.BrandEmber
 import com.mkmemories.copilot.ui.theme.BrandGold
@@ -72,6 +77,10 @@ private val smsFeatures = setOf(Feature.AUTO_REPLY, Feature.TRIP_TRACKING)
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SettingsStore(context) }
+    val scope = rememberCoroutineScope()
+
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
 
     var emergency by remember { mutableStateOf(store.emergencyContacts) }
     var recipients by remember { mutableStateOf(store.arrivalRecipients) }
@@ -310,6 +319,62 @@ fun SettingsScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = BrandMist.copy(alpha = 0.7f),
                 )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // --- Mise à jour de l'application ----------------------------------
+            SettingsCard(title = "Mise à jour") {
+                Text(
+                    "Version installée : build ${BuildConfig.BUILD_NUMBER}. Recherchez la " +
+                        "dernière version et lancez son installation en un tap.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BrandMist,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (checkingUpdate) "Recherche…" else "Rechercher une mise à jour",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = BrandGold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(BrandGold.copy(alpha = 0.14f))
+                            .border(1.dp, BrandGold.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .clickable(enabled = !checkingUpdate) {
+                                checkingUpdate = true
+                                updateStatus = null
+                                scope.launch {
+                                    val info = UpdateChecker.check(currentBuild = BuildConfig.BUILD_NUMBER)
+                                    checkingUpdate = false
+                                    if (info != null) {
+                                        updateStatus = "Mise à jour disponible : ${info.title}. Téléchargement lancé…"
+                                        try {
+                                            context.startActivity(
+                                                android.content.Intent(
+                                                    android.content.Intent.ACTION_VIEW,
+                                                    android.net.Uri.parse(info.downloadUrl),
+                                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                            )
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Impossible d'ouvrir le téléchargement", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        updateStatus = "Vous êtes à jour ✓"
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                    if (checkingUpdate) {
+                        Spacer(Modifier.size(12.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = BrandGold, strokeWidth = 2.dp)
+                    }
+                }
+                updateStatus?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = BrandAuroraTeal)
+                }
             }
 
             Spacer(Modifier.height(14.dp))

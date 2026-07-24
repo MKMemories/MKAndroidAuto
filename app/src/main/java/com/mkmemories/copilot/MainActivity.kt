@@ -94,6 +94,10 @@ import com.mkmemories.copilot.feature.voice.VoiceCommand
 import com.mkmemories.copilot.feature.voice.VoiceCommands
 import com.mkmemories.copilot.ui.parking.ParkingScreen
 import com.mkmemories.copilot.ui.carnet.CarnetScreen
+import com.mkmemories.copilot.ui.budget.BudgetScreen
+import com.mkmemories.copilot.feature.budget.BudgetMath
+import com.mkmemories.copilot.feature.budget.BudgetStore
+import com.mkmemories.copilot.feature.budget.GreeceBudget
 import com.mkmemories.copilot.feature.carnet.GreeceOdyssey
 import com.mkmemories.copilot.feature.carnet.nextDriveDay
 import com.mkmemories.copilot.feature.roadtrip.DayBriefing
@@ -148,12 +152,14 @@ class MainActivity : ComponentActivity() {
                             onOpenSettings = { screen = AppScreen.SETTINGS },
                             onOpenParking = { screen = AppScreen.PARKING },
                             onOpenCarnet = { screen = AppScreen.CARNET },
+                            onOpenBudget = { screen = AppScreen.BUDGET },
                         )
                     }
                     AppScreen.PLANNER -> PlannerScreen(onBack = { screen = AppScreen.HOME })
                     AppScreen.SETTINGS -> SettingsScreen(onBack = { screen = AppScreen.HOME })
                     AppScreen.PARKING -> ParkingScreen(onBack = { screen = AppScreen.HOME })
                     AppScreen.CARNET -> CarnetScreen(onBack = { screen = AppScreen.HOME })
+                    AppScreen.BUDGET -> BudgetScreen(onBack = { screen = AppScreen.HOME })
                 }
             }
         }
@@ -165,7 +171,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppScreen { HOME, PLANNER, SETTINGS, PARKING, CARNET }
+private enum class AppScreen { HOME, PLANNER, SETTINGS, PARKING, CARNET, BUDGET }
 
 // ---------------------------------------------------------------------------
 // Écran d'accueil
@@ -192,6 +198,7 @@ private fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenParking: () -> Unit,
     onOpenCarnet: () -> Unit,
+    onOpenBudget: () -> Unit,
 ) {
     val homeContext = LocalContext.current
     val scroll = rememberScrollState()
@@ -249,6 +256,9 @@ private fun HomeScreen(
 
             Spacer(Modifier.height(28.dp))
             Reveal(appeared, index = 1) { CarnetCard(onOpenCarnet) }
+
+            Spacer(Modifier.height(16.dp))
+            Reveal(appeared, index = 2) { BudgetCard(onOpenBudget) }
 
             Spacer(Modifier.height(16.dp))
             Reveal(appeared, index = 2) { BriefingCard(trip, onPlayBriefing) }
@@ -480,6 +490,42 @@ private fun BriefingCard(trip: Trip, onPlayBriefing: (String) -> Unit) {
 // ---------------------------------------------------------------------------
 // Road trip du jour
 // ---------------------------------------------------------------------------
+
+/** Carte d'accueil « Budget » : reste à payer en un coup d'œil. */
+@Composable
+private fun BudgetCard(onOpenBudget: () -> Unit) {
+    val context = LocalContext.current
+    val items = remember { BudgetStore(context).effectiveItems(GreeceBudget.items()) }
+    val remaining = BudgetMath.remainingCents(items)
+    val total = BudgetMath.totalCents(items)
+
+    NordicCard {
+        Column(
+            modifier = Modifier
+                .clickable(onClick = onOpenBudget)
+                .padding(20.dp),
+        ) {
+            Text("BUDGET DU VOYAGE", style = MaterialTheme.typography.labelSmall, color = BrandGold.copy(alpha = 0.85f))
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(BudgetMath.formatEuros(remaining), style = MaterialTheme.typography.titleLarge, color = BrandGoldLight)
+                Spacer(Modifier.size(8.dp))
+                Text("reste à payer", style = MaterialTheme.typography.bodyMedium, color = BrandMist)
+            }
+            Text("sur ${BudgetMath.formatEuros(total)} au total", style = MaterialTheme.typography.bodyMedium, color = BrandMist)
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(BrandGold.copy(alpha = 0.15f))
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Voir le détail des dépenses  →", style = MaterialTheme.typography.labelLarge, color = BrandGold)
+            }
+        }
+    }
+}
 
 /** Carte d'accueil « Carnet de voyage » : point d'entrée vers le compagnon complet. */
 @Composable
