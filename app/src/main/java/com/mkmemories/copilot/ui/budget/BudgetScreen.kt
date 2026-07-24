@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -52,8 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mkmemories.copilot.feature.budget.BudgetItem
 import com.mkmemories.copilot.feature.budget.BudgetMath
+import com.mkmemories.copilot.feature.budget.BudgetStats
 import com.mkmemories.copilot.feature.budget.BudgetStore
 import com.mkmemories.copilot.feature.budget.GreeceBudget
+import com.mkmemories.copilot.ui.theme.BrandAuroraViolet
 import com.mkmemories.copilot.ui.theme.BrandAuroraTeal
 import com.mkmemories.copilot.ui.theme.BrandEmber
 import com.mkmemories.copilot.ui.theme.BrandGold
@@ -102,6 +105,16 @@ fun BudgetScreen(onBack: () -> Unit) {
             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(12.dp))
                 SummaryCard(total = total, paid = paid, remaining = remaining)
+
+                Spacer(Modifier.height(18.dp))
+                Text("STATISTIQUES", style = MaterialTheme.typography.labelSmall, color = BrandGold, letterSpacing = 2.sp)
+                Spacer(Modifier.height(8.dp))
+                StatsRow(items = items)
+
+                Spacer(Modifier.height(16.dp))
+                Text("RÉPARTITION PAR POSTE", style = MaterialTheme.typography.labelSmall, color = BrandGold, letterSpacing = 2.sp)
+                Spacer(Modifier.height(8.dp))
+                BreakdownCard(items = items, total = total)
 
                 Spacer(Modifier.height(18.dp))
                 Text("DÉPENSES", style = MaterialTheme.typography.labelSmall, color = BrandGold, letterSpacing = 2.sp)
@@ -167,6 +180,123 @@ private fun Metric(label: String, value: String, color: Color) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = BrandMist)
         Text(value, style = MaterialTheme.typography.titleMedium, color = color)
     }
+}
+
+/** Trois statistiques clés : prestations réglées, plus gros poste, part payée. */
+@Composable
+private fun StatsRow(items: List<BudgetItem>) {
+    val total = BudgetMath.totalCents(items)
+    val paid = BudgetMath.paidCents(items)
+    val paidPct = if (total == 0L) 0 else (paid * 100 / total).toInt()
+    val biggest = BudgetStats.biggestPoste(items)
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        StatTile(Modifier.weight(1f), "Réglées", "${BudgetStats.paidCount(items)}/${items.size}", "prestations")
+        StatTile(Modifier.weight(1f), "Payé", "$paidPct %", "du total")
+        StatTile(Modifier.weight(1f), "Plus gros poste", biggest?.poste ?: "—", biggest?.let { BudgetMath.formatEuros(it.totalCents) } ?: "")
+    }
+}
+
+@Composable
+private fun StatTile(modifier: Modifier, label: String, value: String, hint: String) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(BrandSurface.copy(alpha = 0.92f))
+            .border(1.dp, BrandGold.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
+            .padding(12.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = BrandMist)
+        Spacer(Modifier.height(4.dp))
+        Text(value, style = MaterialTheme.typography.titleMedium, color = BrandGoldLight, maxLines = 1)
+        if (hint.isNotBlank()) Text(hint, style = MaterialTheme.typography.labelSmall, color = BrandMist, maxLines = 1)
+    }
+}
+
+/** Barres empilées par poste : largeur = part du total, remplissage payé / restant. */
+@Composable
+private fun BreakdownCard(items: List<BudgetItem>, total: Long) {
+    val postes = BudgetStats.byPoste(items)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(BrandSurface.copy(alpha = 0.92f))
+            .border(1.dp, BrandGold.copy(alpha = 0.2f), RoundedCornerShape(18.dp))
+            .padding(16.dp),
+    ) {
+        postes.forEachIndexed { index, stat ->
+            if (index > 0) Spacer(Modifier.height(14.dp))
+            PosteBar(stat = stat, total = total)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LegendDot(BrandAuroraTeal, "Payé")
+            LegendDot(BrandGold, "Reste à payer")
+        }
+    }
+}
+
+@Composable
+private fun PosteBar(stat: BudgetStats.PosteStat, total: Long) {
+    val share = BudgetStats.share(stat.totalCents, total)
+    val pct = (share * 100).toInt()
+    val accent = posteAccent(stat.poste)
+    val paidWithin = if (stat.totalCents == 0L) 0f else (stat.paidCents.toDouble() / stat.totalCents).toFloat()
+
+    Column {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(posteIcon(stat.poste), fontSize = 15.sp)
+            Spacer(Modifier.size(8.dp))
+            Text(stat.poste, style = MaterialTheme.typography.titleSmall, color = Color.White, modifier = Modifier.weight(1f))
+            Text(BudgetMath.formatEuros(stat.totalCents), style = MaterialTheme.typography.titleSmall, color = accent)
+            Spacer(Modifier.size(8.dp))
+            Text("$pct %", style = MaterialTheme.typography.labelMedium, color = BrandMist)
+        }
+        Spacer(Modifier.height(6.dp))
+        // Piste pleine largeur ; segment = part du total ; segment scindé payé/restant.
+        Box(modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)).background(BrandNight)) {
+            Box(modifier = Modifier.fillMaxWidth(share.coerceIn(0.02f, 1f)).height(12.dp).clip(RoundedCornerShape(6.dp))) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    if (paidWithin > 0f) {
+                        Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(paidWithin).background(BrandAuroraTeal))
+                    }
+                    Box(modifier = Modifier.fillMaxSize().background(BrandGold.copy(alpha = 0.85f)))
+                }
+            }
+        }
+        if (stat.remainingCents > 0L) {
+            Spacer(Modifier.height(3.dp))
+            Text("reste ${BudgetMath.formatEuros(stat.remainingCents)} · ${stat.count} prestation${if (stat.count > 1) "s" else ""}", style = MaterialTheme.typography.labelSmall, color = BrandMist)
+        } else {
+            Spacer(Modifier.height(3.dp))
+            Text("entièrement payé · ${stat.count} prestation${if (stat.count > 1) "s" else ""}", style = MaterialTheme.typography.labelSmall, color = BrandAuroraTeal)
+        }
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(color))
+        Spacer(Modifier.size(6.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = BrandMist)
+    }
+}
+
+private fun posteIcon(poste: String): String = when (poste) {
+    "Vols" -> "✈️"
+    "Hébergements" -> "🏡"
+    "Voitures" -> "🚗"
+    "Ferries" -> "⛴️"
+    else -> "🎫"
+}
+
+private fun posteAccent(poste: String): Color = when (poste) {
+    "Vols" -> BrandIce
+    "Hébergements" -> BrandGoldLight
+    "Voitures" -> BrandGold
+    "Ferries" -> BrandAuroraTeal
+    else -> BrandAuroraViolet
 }
 
 @Composable
